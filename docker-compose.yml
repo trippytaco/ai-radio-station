@@ -18,15 +18,8 @@ version: '3.8'
 
 services:
   ai-radio:
-    # Use pre-built image or build from GitHub
-    # Option 1: Build from source
-    build:
-      context: https://github.com/trippytaco/ai-radio-station.git
-      dockerfile: Dockerfile
-    
-    # Option 2: Use Python base and install requirements
-    # image: python:3.11-slim
-    # command: bash -c "cd /app && pip install -r requirements.txt && python backend/radio_api.py"
+    image: python:3.11-slim
+    command: bash -c "cd /app && pip install -r requirements.txt && python backend/radio_api.py"
     
     container_name: ai-radio-station
     
