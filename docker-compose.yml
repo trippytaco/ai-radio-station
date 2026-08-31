@@ -19,7 +19,13 @@ version: '3.8'
 services:
   ai-radio:
     image: python:3.11
-    command: bash -c "mkdir -p /app && cd /app && wget https://raw.githubusercontent.com/trippytaco/ai-radio-station/main/backend/radio_api.py -O radio_api.py && wget https://raw.githubusercontent.com/trippytaco/ai-radio-station/main/requirements.txt -O requirements.txt && pip install -r requirements.txt && python radio_api.py"
+    # Pulls the whole repo via git clone rather than wget-ing individual files.
+    # The previous per-file wget approach silently dropped any new backend
+    # module (tts_service.py, plex_client.py, etc.) added after the compose
+    # file was written, and raw.githubusercontent.com's CDN can serve a stale
+    # cached copy of an individual file for a few minutes after a push.
+    # A shallow git clone always pulls the complete, current tree in one shot.
+    command: bash -c "apt-get update -qq && apt-get install -y -qq git && rm -rf /app && git clone --depth 1 --branch main https://github.com/trippytaco/ai-radio-station.git /app && cd /app && pip install --no-cache-dir -r requirements.txt && cd backend && python radio_api.py"
     
     container_name: ai-radio-station
     

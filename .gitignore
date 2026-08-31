@@ -60,6 +60,7 @@ log/
 Thumbs.db
 .AppleDouble
 .LSOverride
+*:Zone.Identifier
 
 # Docker
 .dockerignore
