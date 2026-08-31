@@ -1,0 +1,117 @@
+version: '3.8'
+
+# AI Radio Station - Portainer Optimized
+# Deploy via Portainer GUI or docker-compose
+# 
+# Instructions:
+# 1. Copy this entire file
+# 2. In Portainer: Stacks → Add Stack → Paste this file
+# 3. Add environment variables in Portainer UI
+# 4. Deploy
+#
+# Environment Variables Required:
+# - PLEX_URL (default: http://192.168.8.113:32400)
+# - PLEX_TOKEN
+# - LASTFM_API_KEY
+# - LASTFM_USERNAME
+# - ANTHROPIC_API_KEY
+
+services:
+  ai-radio:
+    # Use pre-built image or build from GitHub
+    # Option 1: Build from source
+    build:
+      context: https://github.com/trippytaco/ai-radio-station.git
+      dockerfile: Dockerfile
+    
+    # Option 2: Use Python base and install requirements
+    # image: python:3.11-slim
+    # command: bash -c "cd /app && pip install -r requirements.txt && python backend/radio_api.py"
+    
+    container_name: ai-radio-station
+    
+    # Port mapping: external:internal
+    ports:
+      - "8000:8000"
+    
+    # Environment variables
+    environment:
+      # Plex Configuration
+      PLEX_URL: ${PLEX_URL:-http://192.168.8.113:32400}
+      PLEX_TOKEN: ${PLEX_TOKEN}
+      
+      # Last.fm Configuration
+      LASTFM_API_KEY: ${LASTFM_API_KEY}
+      LASTFM_USERNAME: ${LASTFM_USERNAME}
+      
+      # Anthropic (Claude) Configuration
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      
+      # Optional: News Sources
+      BBC_URL: ${BBC_URL:-https://www.bbc.com/news}
+      GUARDIAN_API_KEY: ${GUARDIAN_API_KEY:-}
+      NEWSAPI_KEY: ${NEWSAPI_KEY:-}
+      
+      # Server Configuration
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8000
+      DEBUG: ${DEBUG:-false}
+    
+    # Mount .env file if using one
+    env_file:
+      - .env
+    
+    # Volume mounts
+    volumes:
+      # Logs directory
+      - ./logs:/app/logs
+      
+      # Optional: Mount source code for development
+      # - ./backend:/app/backend
+      # - ./frontend:/app/frontend
+      # - ./requirements.txt:/app/requirements.txt
+    
+    # Always restart unless stopped manually
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s          # Check every 30 seconds
+      timeout: 10s           # Timeout after 10 seconds
+      retries: 3             # Fail after 3 failed checks
+      start_period: 10s      # Wait 10s before first check
+    
+    # Resource limits (optional - adjust for your QNAP)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network
+    networks:
+      - ai-radio-network
+
+# Network configuration
+networks:
+  ai-radio-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# Optional: Add volumes for persistent data
+volumes:
+  ai-radio-logs:
+    driver: local
