@@ -17,6 +17,11 @@ version: '3.8'
 # - LASTFM_API_KEY
 # - LASTFM_USERNAME
 # - ANTHROPIC_API_KEY
+#
+# Optional (TTS - degrades to text-only if unset):
+# - TTS_PROVIDER (default: google)
+# - GOOGLE_CLOUD_CREDENTIALS_JSON (base64-encoded service account key JSON - see README)
+# - ELEVENLABS_API_KEY
 
 services:
   ai-radio:
@@ -52,7 +57,12 @@ services:
       
       # Anthropic (Claude) Configuration
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      
+
+      # TTS Configuration (optional - degrades to text-only if unset)
+      TTS_PROVIDER: ${TTS_PROVIDER:-google}
+      GOOGLE_CLOUD_CREDENTIALS_JSON: ${GOOGLE_CLOUD_CREDENTIALS_JSON:-}
+      ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+
       # Optional: News Sources
       BBC_URL: ${BBC_URL:-https://www.bbc.com/news}
       GUARDIAN_API_KEY: ${GUARDIAN_API_KEY:-}
