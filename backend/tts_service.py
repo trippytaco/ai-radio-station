@@ -3,6 +3,8 @@ Text-to-Speech Service
 Supports Google Cloud TTS and ElevenLabs
 """
 
+import base64
+import json
 import os
 import asyncio
 from abc import ABC, abstractmethod
@@ -37,14 +39,31 @@ class GoogleCloudTTS(TTSProvider):
     def __init__(self):
         if not GOOGLE_AVAILABLE:
             raise RuntimeError("Google Cloud TTS not installed. Install with: pip install google-cloud-texttospeech")
-        
-        credentials_path = os.getenv("GOOGLE_CLOUD_CREDENTIALS_JSON")
-        if not credentials_path:
+
+        raw = os.getenv("GOOGLE_CLOUD_CREDENTIALS_JSON")
+        if not raw:
             raise RuntimeError("GOOGLE_CLOUD_CREDENTIALS_JSON not set in environment")
-        
-        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
-        self.client = texttospeech.TextToSpeechClient()
-        
+
+        # Deploys here have no persistent file storage to point
+        # GOOGLE_APPLICATION_CREDENTIALS at (everything else is configured
+        # via env vars in Portainer's UI) - accept the service account
+        # key's JSON content directly instead of a file path. Base64 is
+        # the recommended form since it survives being pasted into a
+        # single-line env var field without any quoting/newline issues;
+        # raw JSON (starting with "{") also works.
+        raw = raw.strip()
+        try:
+            info = json.loads(raw if raw.startswith("{") else base64.b64decode(raw).decode("utf-8"))
+        except Exception as e:
+            raise RuntimeError(
+                f"GOOGLE_CLOUD_CREDENTIALS_JSON must be the service account key's JSON "
+                f"content (or that content base64-encoded), not a file path: {e}"
+            )
+
+        from google.oauth2 import service_account
+        credentials = service_account.Credentials.from_service_account_info(info)
+        self.client = texttospeech.TextToSpeechClient(credentials=credentials)
+
         # Voice mappings
         self.voices = {
             "alex_female": "en-US-Neural2-C",      # Female, energetic

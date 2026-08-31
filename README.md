@@ -93,7 +93,9 @@ Create a `.env` file with:
 
 ```bash
 # Plex Configuration
-PLEX_URL=http://localhost:32400
+# Use the public/reverse-proxied URL, not a LAN IP - the container runs
+# on an isolated custom bridge network that can't route to a LAN address.
+PLEX_URL=https://plex.orosz.cc
 PLEX_TOKEN=your_plex_token_here
 
 # Last.fm Configuration
@@ -102,6 +104,11 @@ LASTFM_USERNAME=your_username
 
 # Anthropic (Claude) Configuration
 ANTHROPIC_API_KEY=your_api_key
+
+# TTS Configuration (optional - degrades gracefully to text-only if unset)
+TTS_PROVIDER=google                        # "google" or "elevenlabs"
+GOOGLE_CLOUD_CREDENTIALS_JSON=              # see "Getting Credentials" below
+ELEVENLABS_API_KEY=optional
 
 # Optional: News Sources
 BBC_URL=https://www.bbc.com/news
@@ -132,6 +139,29 @@ DEBUG=false
 1. Go to https://console.anthropic.com
 2. Create API key in account settings
 3. Copy the key
+
+### Google Cloud TTS
+
+`GOOGLE_CLOUD_CREDENTIALS_JSON` holds the *content* of your service
+account key, not a path to a file on disk - this deploy has no
+persistent file storage to point a path at (everything is configured via
+Portainer's environment variable UI, same as the other credentials).
+
+1. Download your service account key JSON from the Google Cloud Console
+   (IAM & Admin → Service Accounts → Keys)
+2. Base64-encode it to a single line, so it pastes cleanly into
+   Portainer's env var field without newline/quoting issues:
+   ```bash
+   base64 -w0 service-account-key.json
+   ```
+   (macOS: `base64 -i service-account-key.json`)
+3. Paste that output as the value of `GOOGLE_CLOUD_CREDENTIALS_JSON` in
+   Portainer → Stacks → ai-radio-station → environment variables
+4. Set `TTS_PROVIDER=google` (the default)
+
+Pasting the raw JSON directly (starting with `{`) also works, but
+base64 is recommended - Portainer's field is single-line and the raw
+key contains newlines.
 
 ---
 

@@ -10,7 +10,9 @@ version: '3.8'
 # 4. Deploy
 #
 # Environment Variables Required:
-# - PLEX_URL (default: http://192.168.8.113:32400)
+# - PLEX_URL (default: https://plex.orosz.cc - the container's isolated
+#   bridge network below can't reach the QNAP's own LAN IP, so a LAN
+#   address here will fail with "All connection attempts failed")
 # - PLEX_TOKEN
 # - LASTFM_API_KEY
 # - LASTFM_USERNAME
@@ -41,7 +43,7 @@ services:
     # Environment variables
     environment:
       # Plex Configuration
-      PLEX_URL: ${PLEX_URL:-http://192.168.8.113:32400}
+      PLEX_URL: ${PLEX_URL:-https://plex.orosz.cc}
       PLEX_TOKEN: ${PLEX_TOKEN}
       
       # Last.fm Configuration

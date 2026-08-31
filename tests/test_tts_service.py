@@ -80,6 +80,43 @@ def test_google_provider_requires_credentials_env(monkeypatch):
         GoogleCloudTTS()
 
 
+def test_google_provider_accepts_base64_credentials(monkeypatch):
+    """
+    Regression test: GOOGLE_CLOUD_CREDENTIALS_JSON used to be treated as a
+    file path (GOOGLE_APPLICATION_CREDENTIALS = <value>), but this deploy
+    has no persistent file storage to point that at - it must accept the
+    service account key's JSON content directly (base64-encoded, to
+    survive a single-line Portainer env var field).
+    """
+    import base64
+    from tts_service import GoogleCloudTTS
+
+    monkeypatch.setattr(tts_service, "GOOGLE_AVAILABLE", True)
+    fake_key = base64.b64encode(b'{"type": "service_account", "project_id": "x"}').decode()
+    monkeypatch.setenv("GOOGLE_CLOUD_CREDENTIALS_JSON", fake_key)
+
+    # Reaches real google-auth/google-cloud-texttospeech code past the
+    # point this test cares about (JSON was parsed successfully) - those
+    # aren't installed in this test env, so assert we got past parsing
+    # rather than mocking the whole google client stack.
+    with pytest.raises(Exception) as exc_info:
+        GoogleCloudTTS()
+    assert "must be the service account key's JSON" not in str(exc_info.value)
+
+
+def test_google_provider_rejects_a_file_path(monkeypatch):
+    """The old (wrong) usage - a file path - must fail with a clear
+    message telling the caller what actually changed, not a cryptic
+    JSON-decode error."""
+    from tts_service import GoogleCloudTTS
+
+    monkeypatch.setattr(tts_service, "GOOGLE_AVAILABLE", True)
+    monkeypatch.setenv("GOOGLE_CLOUD_CREDENTIALS_JSON", "/path/to/service-account-key.json")
+
+    with pytest.raises(RuntimeError, match="must be the service account key's JSON"):
+        GoogleCloudTTS()
+
+
 def test_google_provider_not_installed(monkeypatch):
     from tts_service import GoogleCloudTTS
     monkeypatch.setattr(tts_service, "GOOGLE_AVAILABLE", False)
