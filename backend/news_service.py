@@ -9,6 +9,25 @@ from typing import List, Dict, Any, Optional
 import httpx
 
 
+def _redact_url(url: httpx.URL) -> str:
+    """Scheme/host/path only - strips query params (api-key/apiKey are
+    passed as query params by every source below, and would otherwise
+    leak into logs verbatim via str(exception))."""
+    try:
+        return f"{url.scheme}://{url.host}{url.path}"
+    except Exception:
+        return "<upstream>"
+
+
+def _log_source_error(source_name: str, e: Exception) -> None:
+    if isinstance(e, httpx.HTTPStatusError):
+        print(f"{source_name} error: HTTP {e.response.status_code} from {_redact_url(e.request.url)}")
+    elif isinstance(e, httpx.RequestError):
+        print(f"{source_name} error: {type(e).__name__} contacting {_redact_url(e.request.url)}")
+    else:
+        print(f"{source_name} error: {type(e).__name__}: {e}")
+
+
 class NewsSource:
     """Base class for news sources"""
     
@@ -56,7 +75,7 @@ class BBCNews(NewsSource):
                 return headlines[:limit]
         
         except Exception as e:
-            print(f"BBC News error: {str(e)}")
+            _log_source_error("BBC News", e)
             return []
 
 
@@ -72,7 +91,7 @@ class GuardianNews(NewsSource):
             
             async with httpx.AsyncClient() as client:
                 response = await client.get(
-                    "https://open-platform.theguardian.com/search",
+                    "https://content.guardianapis.com/search",
                     params={
                         "api-key": api_key,
                         "show-fields": "trailText,thumbnail",
@@ -98,7 +117,7 @@ class GuardianNews(NewsSource):
                 return headlines[:limit]
         
         except Exception as e:
-            print(f"Guardian News error: {str(e)}")
+            _log_source_error("Guardian News", e)
             return []
 
 
@@ -140,7 +159,7 @@ class CNNNews(NewsSource):
                 return headlines[:limit]
         
         except Exception as e:
-            print(f"CNN News error: {str(e)}")
+            _log_source_error("CNN News", e)
             return []
 
 

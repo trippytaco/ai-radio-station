@@ -35,7 +35,7 @@ async def test_get_headlines_all_sources_are_merged_and_sorted(news):
             {"title": "Older", "description": "d", "url": "u", "publishedAt": "2026-08-30T00:00:00Z"},
         ]})
     )
-    respx.get("https://open-platform.theguardian.com/search").mock(
+    respx.get("https://content.guardianapis.com/search").mock(
         return_value=httpx.Response(200, json={"response": {"results": [
             {"webTitle": "Newer", "fields": {"trailText": "d"}, "webUrl": "u", "webPublicationDate": "2026-08-31T12:00:00Z"},
         ]}})
@@ -49,9 +49,28 @@ async def test_get_headlines_all_sources_are_merged_and_sorted(news):
 
 
 @respx.mock
+async def test_error_logging_does_not_leak_api_key(monkeypatch, capsys):
+    """
+    Regression test: confirmed live on 2026-09-01 - a Guardian 404 was
+    logged with the full request URL, including api-key=<real key> in
+    plaintext (str(httpx.HTTPStatusError) includes the full URL by
+    default). Error logs must not contain the key.
+    """
+    monkeypatch.setenv("GUARDIAN_API_KEY", "totally-secret-guardian-key")
+    respx.get("https://content.guardianapis.com/search").mock(return_value=httpx.Response(404))
+
+    from news_service import GuardianNews
+    await GuardianNews().get_headlines()
+
+    captured = capsys.readouterr()
+    assert "totally-secret-guardian-key" not in captured.out
+    assert "content.guardianapis.com" in captured.out  # still useful for debugging
+
+
+@respx.mock
 async def test_source_error_returns_empty_list_not_exception(news):
     respx.get("https://newsapi.org/v2/top-headlines").mock(return_value=httpx.Response(500))
-    respx.get("https://open-platform.theguardian.com/search").mock(return_value=httpx.Response(500))
+    respx.get("https://content.guardianapis.com/search").mock(return_value=httpx.Response(500))
 
     headlines = await news.get_headlines(source="bbc")
 
@@ -72,7 +91,7 @@ async def test_unknown_source_falls_through_to_all_sources(news):
     is treated the same as no source filter."""
     with respx.mock:
         respx.get("https://newsapi.org/v2/top-headlines").mock(return_value=httpx.Response(200, json={"articles": []}))
-        respx.get("https://open-platform.theguardian.com/search").mock(
+        respx.get("https://content.guardianapis.com/search").mock(
             return_value=httpx.Response(200, json={"response": {"results": []}})
         )
         headlines = await news.get_headlines(source="reuters")
