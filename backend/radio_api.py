@@ -188,6 +188,11 @@ async def generate_host_segment(
         Imagine you're talking to ONE listener—this is their personal station.
         Return ONLY the spoken text, no stage directions."""
     
+    # Check if API key is configured
+    if not ANTHROPIC_API_KEY:
+        print("ERROR: ANTHROPIC_API_KEY not set")
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -201,18 +206,39 @@ async def generate_host_segment(
                     "model": "claude-3-5-sonnet-20241022",
                     "max_tokens": 200,
                     "messages": [{"role": "user", "content": prompt}]
-                }
+                },
+                timeout=30.0
             )
+            
+            # Check response status
+            if response.status_code != 200:
+                error_text = response.text
+                print(f"ERROR: Anthropic API returned {response.status_code}: {error_text}")
+                raise HTTPException(status_code=500, detail=f"Anthropic API error {response.status_code}: {error_text}")
+            
             data = response.json()
-            text = data["content"][0]["text"] if data.get("content") else "Coming up next..."
+            
+            # Check if we got content back
+            if not data.get("content") or len(data["content"]) == 0:
+                print(f"ERROR: No content in response: {data}")
+                raise HTTPException(status_code=500, detail="No content in Anthropic response")
+            
+            text = data["content"][0].get("text", "Coming up next...")
+            print(f"SUCCESS: Generated segment - {context}")
+            
             return {
                 "host": host["name"],
                 "context": context,
                 "text": text,
                 "timestamp": datetime.now().isoformat()
             }
+    
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Generation error: {str(e)}")
+        error_msg = f"Generation error: {type(e).__name__}: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        raise HTTPException(status_code=500, detail=error_msg)
 
 
 @app.get("/stream")
