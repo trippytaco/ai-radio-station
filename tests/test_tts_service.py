@@ -104,6 +104,31 @@ def test_google_provider_accepts_base64_credentials(monkeypatch):
     assert "must be the service account key's JSON" not in str(exc_info.value)
 
 
+def test_google_provider_tolerates_missing_base64_padding(monkeypatch):
+    """
+    Regression test: confirmed live on 2026-09-01 - a correctly-encoded
+    3134-char base64 credentials value lost its trailing "==" padding
+    somewhere in copy/paste through Portainer's UI (3134 % 4 == 2), and
+    base64.b64decode() refused it with "Incorrect padding". The code
+    should tolerate a missing-padding paste rather than require a
+    byte-perfect one.
+    """
+    import base64
+    from tts_service import GoogleCloudTTS
+
+    monkeypatch.setattr(tts_service, "GOOGLE_AVAILABLE", True)
+    full = base64.b64encode(b'{"type": "service_account", "project_id": "x"}').decode()
+    assert full.endswith("=")  # sanity: this fixture actually has padding to lose
+    monkeypatch.setenv("GOOGLE_CLOUD_CREDENTIALS_JSON", full.rstrip("="))
+
+    with pytest.raises(Exception) as exc_info:
+        GoogleCloudTTS()
+    # Must get past JSON parsing (which is what this test targets) - it'll
+    # still fail past that point since google-auth isn't installed here.
+    assert "must be the service account key's JSON" not in str(exc_info.value)
+    assert "Incorrect padding" not in str(exc_info.value)
+
+
 def test_google_provider_rejects_a_file_path(monkeypatch):
     """The old (wrong) usage - a file path - must fail with a clear
     message telling the caller what actually changed, not a cryptic

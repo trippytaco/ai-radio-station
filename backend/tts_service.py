@@ -53,7 +53,14 @@ class GoogleCloudTTS(TTSProvider):
         # raw JSON (starting with "{") also works.
         raw = raw.strip()
         try:
-            info = json.loads(raw if raw.startswith("{") else base64.b64decode(raw).decode("utf-8"))
+            if raw.startswith("{"):
+                info = json.loads(raw)
+            else:
+                # Trailing "=" padding is a common casualty of copy-pasting
+                # a long single-line value into a web UI field - restore it
+                # rather than requiring a byte-perfect paste.
+                padded = raw + "=" * (-len(raw) % 4)
+                info = json.loads(base64.b64decode(padded).decode("utf-8"))
         except Exception as e:
             raise RuntimeError(
                 f"GOOGLE_CLOUD_CREDENTIALS_JSON must be the service account key's JSON "
