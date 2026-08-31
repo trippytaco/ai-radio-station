@@ -1,0 +1,6 @@
+# Test-only dependencies, on top of the production requirements.
+-r requirements.txt
+
+pytest
+pytest-asyncio
+respx

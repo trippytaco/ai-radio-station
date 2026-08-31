@@ -158,9 +158,10 @@ class SessionBuilder:
                     elapsed += duration
             
             elif segment_type == SegmentType.NEWS_SEGMENT:
-                # Add news with host intro
-                headline = await news_service.get_random_headline()
-                
+                # Add news with host intro (news_service may be None if it
+                # failed to initialize at startup, same as plex_client)
+                headline = await news_service.get_random_headline() if news_service else None
+
                 if headline:
                     # News intro by host - AI-generated banter hooking the
                     # listener into the topic, falling back to a plain

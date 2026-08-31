@@ -194,6 +194,9 @@ Your QNAP / Server
 
 ## Testing the API
 
+`context`/`topic` on `/generate/host-segment` are query parameters, not a
+JSON body (the endpoint has no request-body model) - pass them on the URL:
+
 ```bash
 # Health check
 curl http://localhost:8000/health
@@ -202,18 +205,45 @@ curl http://localhost:8000/health
 curl http://localhost:8000/config
 
 # Generate a motivation snippet
-curl -X POST http://localhost:8000/generate/host-segment \
-  -H "Content-Type: application/json" \
-  -d '{"context":"motivation"}'
+curl -X POST "http://localhost:8000/generate/host-segment?context=motivation"
 
 # Generate a fake ad
-curl -X POST http://localhost:8000/generate/host-segment \
-  -H "Content-Type: application/json" \
-  -d '{"context":"ad_lib"}'
+curl -X POST "http://localhost:8000/generate/host-segment?context=ad_lib"
 
 # Get recent tracks from Last.fm
-curl http://localhost:8000/lastfm/recent?limit=10
+curl "http://localhost:8000/lastfm/recent?limit=10"
 ```
+
+---
+
+## Automated Tests
+
+A pytest suite lives in `tests/`. External calls (Anthropic, Plex,
+Last.fm, news APIs, TTS providers) are mocked via
+[respx](https://lundberg.github.io/respx/), so the suite needs no
+credentials and makes zero network calls:
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest tests/ -v
+```
+
+There's also an opt-in smoke-test module, `tests/test_live_smoke.py`,
+that hits a real running instance (e.g. the QNAP deployment) over HTTP
+using whatever credentials it actually has configured. It's skipped by
+default; run it explicitly against a live instance after a deploy:
+
+```bash
+AI_RADIO_LIVE_URL=http://192.168.8.113:8000 \
+  .venv/bin/pytest tests/test_live_smoke.py -v -m live
+```
+
+When adding a new endpoint or backend module, add coverage in `tests/`
+alongside it - the mocked suite is meant to catch exactly the kind of
+"looked fine in code review, broke on first real request" bugs this
+project has hit before (retired model ids, a frontend/backend query-param
+mismatch, an infinite loop when no content sources were configured).
 
 ---
 
