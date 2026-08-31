@@ -23,7 +23,11 @@ class PlexClient:
         """Get headers for Plex API requests"""
         return {
             "X-Plex-Token": self.token,
-            "Accept": "application/json"
+            # Every method here parses the response with ElementTree - Plex
+            # honors Accept and will return JSON instead of XML if asked,
+            # which breaks ET.fromstring() with a cryptic
+            # "not well-formed (invalid token)" error. Request XML to match.
+            "Accept": "application/xml"
         }
     
     async def get_libraries(self) -> List[Dict[str, Any]]:

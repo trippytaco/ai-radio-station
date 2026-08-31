@@ -86,6 +86,17 @@ async def test_get_library_tracks_falls_back_to_unknown_when_missing(plex):
     assert tracks[0]["album"] == "Unknown"
 
 
+def test_requests_xml_not_json(plex):
+    """
+    Regression test: every method here parses the response with
+    ElementTree, but _get_headers() used to send Accept: application/json.
+    Plex honors that and returns JSON instead of XML, which breaks
+    ET.fromstring() with a cryptic "not well-formed (invalid token)"
+    error - confirmed live on 2026-09-01. Accept must ask for XML.
+    """
+    assert plex._get_headers()["Accept"] == "application/xml"
+
+
 def test_client_requires_token(monkeypatch):
     monkeypatch.delenv("PLEX_TOKEN", raising=False)
     with pytest.raises(RuntimeError, match="PLEX_TOKEN"):
