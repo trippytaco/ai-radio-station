@@ -19,7 +19,7 @@ version: '3.8'
 services:
   ai-radio:
     image: python:3.11
-    command: bash -c "curl -L https://github.com/trippytaco/ai-radio-station/archive/refs/heads/main.zip -o /tmp/repo.zip && unzip /tmp/repo.zip -d /app && cd /app/ai-radio-station-main && pip install -r requirements.txt && python backend/radio_api.py"
+    command: bash -c "mkdir -p /app && cd /app && wget https://raw.githubusercontent.com/trippytaco/ai-radio-station/main/backend/radio_api.py -O radio_api.py && wget https://raw.githubusercontent.com/trippytaco/ai-radio-station/main/requirements.txt -O requirements.txt && pip install -r requirements.txt && python radio_api.py"
     
     container_name: ai-radio-station
     
