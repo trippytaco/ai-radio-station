@@ -4,13 +4,22 @@ httpx==0.25.1
 python-dotenv==1.0.0
 pydantic==2.5.0
 
-# Optional: For advanced audio processing
+# Audio & TTS
 pydub==0.25.1
 scipy==1.11.4
 numpy==1.26.2
 
-# Optional: For XML parsing (Plex uses XML)
+# Google Cloud TTS
+google-cloud-texttospeech==2.14.1
+
+# ElevenLabs TTS
+elevenlabs==0.2.24
+
+# Plex
+plexapi==4.15.0
+
+# XML parsing
 lxml==4.9.3
 
-# Optional: For better async performance
+# Async utilities
 aiofiles==23.2.1

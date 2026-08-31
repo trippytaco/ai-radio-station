@@ -1,20 +1,27 @@
 """
-Personalized AI Radio Station Backend
-Integrates Plex, Last.fm, news sources, and AI host personalities
+AI Radio Station Backend - Complete Integration
+Includes: Plex streaming, TTS, News, Host generation, Queue management
 """
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi.responses import StreamingResponse, FileResponse
 import httpx
 import json
 from datetime import datetime
 from typing import Optional
 import os
 from dotenv import load_dotenv
+import io
 
 load_dotenv()
 
 app = FastAPI(title="AI Radio Station")
+
+# Import our new modules
+from tts_service import get_tts_provider, synthesize_text
+from plex_client import get_plex_client
+from news_service import get_news_service
+from radio_queue import RadioQueue, Segment, SegmentType, SessionBuilder, AudioMixer
 
 # Configuration
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
@@ -22,38 +29,93 @@ PLEX_TOKEN = os.getenv("PLEX_TOKEN")
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
 LASTFM_USERNAME = os.getenv("LASTFM_USERNAME")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "google")
 
 # Host personality profiles
 HOST_PROFILES = {
     "alex": {
         "name": "Alex",
         "personality": "sassy, witty, makes pop culture references, calls you out playfully",
-        "voice_type": "upbeat, slightly irreverent"
+        "voice_type": "upbeat, slightly irreverent",
+        "tts_voice_id": "alex_female"
     },
     "jordan": {
         "name": "Jordan", 
         "personality": "smooth, laid-back, sardonic humor, insider vibe",
-        "voice_type": "conversational, relaxed"
+        "voice_type": "conversational, relaxed",
+        "tts_voice_id": "jordan_male"
     }
 }
 
 # Store user preferences
 user_config = {
-    "music_weight": 0.5,  # 0-1: how much music vs talk
-    "news_weight": 0.3,   # 0-1: how much news segments
-    "ad_weight": 0.1,     # 0-1: hilarious ads frequency
+    "music_weight": 0.5,
+    "news_weight": 0.3,
+    "ad_weight": 0.1,
     "host_personality": "alex",
     "news_sources": ["bbc", "guardian", "cnn"],
-    "context": "commute",  # "workout", "commute", "chill"
-    "active_hosts": ["alex"]
+    "context": "commute",
+    "active_hosts": ["alex"],
+    "tts_provider": TTS_PROVIDER
 }
 
+# Global services
+plex_client = None
+news_service = None
+radio_queue = None
+
+try:
+    plex_client = get_plex_client()
+except Exception as e:
+    print(f"Warning: Plex client not available: {e}")
+
+try:
+    news_service = get_news_service()
+except Exception as e:
+    print(f"Warning: News service not available: {e}")
+
+radio_queue = RadioQueue()
+
+
+@app.on_event("startup")
+async def startup():
+    """Initialize services on startup"""
+    global plex_client, news_service, radio_queue
+    try:
+        if not plex_client:
+            plex_client = get_plex_client()
+        print("✓ Plex client initialized")
+    except Exception as e:
+        print(f"✗ Plex client initialization failed: {e}")
+    
+    try:
+        if not news_service:
+            news_service = get_news_service()
+        print("✓ News service initialized")
+    except Exception as e:
+        print(f"✗ News service initialization failed: {e}")
+    
+    print("✓ API startup complete")
+
+
+# ============================================================================
+# HEALTH & STATUS
+# ============================================================================
 
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "ok"}
+    return {
+        "status": "ok",
+        "service": "ai-radio-station",
+        "tts_provider": TTS_PROVIDER,
+        "timestamp": datetime.now().isoformat()
+    }
 
+
+# ============================================================================
+# CONFIGURATION
+# ============================================================================
 
 @app.get("/config")
 async def get_config():
@@ -66,27 +128,74 @@ async def update_config(new_config: dict):
     """Update radio station configuration"""
     global user_config
     user_config.update(new_config)
+    
+    # Update radio queue weights
+    radio_queue.update_weights(
+        user_config["music_weight"],
+        user_config["news_weight"],
+        user_config["ad_weight"]
+    )
+    
     return {"status": "updated", "config": user_config}
 
 
-@app.get("/plex/library")
-async def get_plex_library():
-    """Fetch user's music library from Plex"""
-    if not PLEX_TOKEN:
-        raise HTTPException(status_code=400, detail="Plex token not configured")
+# ============================================================================
+# PLEX INTEGRATION
+# ============================================================================
+
+@app.get("/plex/libraries")
+async def get_plex_libraries():
+    """Get available Plex music libraries"""
+    if not plex_client:
+        raise HTTPException(status_code=500, detail="Plex client not available")
     
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{PLEX_URL}/library/sections",
-                headers={"X-Plex-Token": PLEX_TOKEN}
-            )
-            # Parse XML response and extract music libraries
-            # (Plex returns XML, so we'd parse it here)
-            return {"status": "connected", "libraries": response.text}
+        libraries = await plex_client.get_libraries()
+        return {"status": "success", "libraries": libraries}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Plex connection error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Plex error: {str(e)}")
 
+
+@app.get("/plex/tracks")
+async def get_plex_tracks(library_key: str = "1", limit: int = 50):
+    """Get tracks from Plex library"""
+    if not plex_client:
+        raise HTTPException(status_code=500, detail="Plex client not available")
+    
+    try:
+        tracks = await plex_client.get_library_tracks(library_key, limit)
+        return {"status": "success", "tracks": tracks}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Plex error: {str(e)}")
+
+
+@app.get("/plex/stream/{rating_key}")
+async def stream_plex_track(rating_key: str):
+    """Stream a track from Plex"""
+    if not plex_client:
+        raise HTTPException(status_code=500, detail="Plex client not available")
+    
+    try:
+        stream_url = await plex_client.get_track_stream_url(rating_key)
+        
+        # Proxy the stream from Plex
+        async with httpx.AsyncClient() as client:
+            response = await client.get(stream_url, follow_redirects=True)
+            response.raise_for_status()
+            
+            return StreamingResponse(
+                io.BytesIO(response.content),
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": f"inline; filename=track.mp3"}
+            )
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
+
+
+# ============================================================================
+# LAST.FM INTEGRATION
+# ============================================================================
 
 @app.get("/lastfm/recent")
 async def get_lastfm_recent(limit: int = 50):
@@ -117,7 +226,7 @@ async def get_lastfm_recent(limit: int = 50):
 
 @app.get("/lastfm/top-artists")
 async def get_lastfm_top_artists(period: str = "7day", limit: int = 20):
-    """Get user's top artists from Last.fm to understand taste"""
+    """Get user's top artists from Last.fm"""
     if not LASTFM_API_KEY or not LASTFM_USERNAME:
         raise HTTPException(status_code=400, detail="Last.fm credentials not configured")
     
@@ -143,16 +252,37 @@ async def get_lastfm_top_artists(period: str = "7day", limit: int = 20):
         raise HTTPException(status_code=500, detail=f"Last.fm error: {str(e)}")
 
 
+# ============================================================================
+# NEWS INTEGRATION
+# ============================================================================
+
+@app.get("/news/headlines")
+async def get_news_headlines(source: str = None, limit: int = 5):
+    """Get news headlines"""
+    if not news_service:
+        raise HTTPException(status_code=500, detail="News service not available")
+    
+    try:
+        headlines = await news_service.get_headlines(source, limit)
+        return {"status": "success", "headlines": headlines}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"News error: {str(e)}")
+
+
+# ============================================================================
+# HOST SEGMENT GENERATION
+# ============================================================================
+
 @app.post("/generate/host-segment")
 async def generate_host_segment(
     context: Optional[str] = None,
     topic: Optional[str] = None,
-    duration_seconds: int = 60
 ):
-    """
-    Generate AI host banter/commentary segment.
-    Context can be: "intro", "news_banter", "motivation", "transition", "ad_lib"
-    """
+    """Generate AI host banter/commentary segment with TTS"""
+    
+    if not ANTHROPIC_API_KEY:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    
     host = HOST_PROFILES.get(user_config["host_personality"], HOST_PROFILES["alex"])
     
     if context == "motivation":
@@ -188,12 +318,8 @@ async def generate_host_segment(
         Imagine you're talking to ONE listener—this is their personal station.
         Return ONLY the spoken text, no stage directions."""
     
-    # Check if API key is configured
-    if not ANTHROPIC_API_KEY:
-        print("ERROR: ANTHROPIC_API_KEY not set")
-        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
-    
     try:
+        # Get text from Claude
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 "https://api.anthropic.com/v1/messages",
@@ -203,35 +329,42 @@ async def generate_host_segment(
                     "content-type": "application/json"
                 },
                 json={
-                    "model": "claude-sonnet-5",
+                    "model": "claude-3-5-sonnet-20241022",
                     "max_tokens": 200,
                     "messages": [{"role": "user", "content": prompt}]
                 },
                 timeout=30.0
             )
             
-            # Check response status
             if response.status_code != 200:
                 error_text = response.text
                 print(f"ERROR: Anthropic API returned {response.status_code}: {error_text}")
-                raise HTTPException(status_code=500, detail=f"Anthropic API error {response.status_code}: {error_text}")
+                raise HTTPException(status_code=500, detail=f"Claude API error: {response.status_code}")
             
             data = response.json()
             
-            # Check if we got content back
             if not data.get("content") or len(data["content"]) == 0:
                 print(f"ERROR: No content in response: {data}")
-                raise HTTPException(status_code=500, detail="No content in Anthropic response")
+                raise HTTPException(status_code=500, detail="No content in Claude response")
             
             text = data["content"][0].get("text", "Coming up next...")
-            print(f"SUCCESS: Generated segment - {context}")
-            
-            return {
-                "host": host["name"],
-                "context": context,
-                "text": text,
-                "timestamp": datetime.now().isoformat()
-            }
+        
+        # Generate TTS audio
+        try:
+            tts_provider = get_tts_provider()
+            audio_bytes = await tts_provider.synthesize(text, host["tts_voice_id"])
+        except Exception as tts_error:
+            print(f"TTS error: {str(tts_error)}, returning text-only response")
+            audio_bytes = None
+        
+        return {
+            "host": host["name"],
+            "context": context,
+            "text": text,
+            "timestamp": datetime.now().isoformat(),
+            "audio_available": audio_bytes is not None,
+            "tts_provider": TTS_PROVIDER if audio_bytes else None
+        }
     
     except HTTPException:
         raise
@@ -241,67 +374,81 @@ async def generate_host_segment(
         raise HTTPException(status_code=500, detail=error_msg)
 
 
-@app.get("/stream")
-async def stream_radio(duration_minutes: int = 60):
-    """
-    Stream personalized radio session.
-    Combines music from Plex, host segments, news, and ads.
-    Returns a stream of audio metadata and content.
-    """
+# ============================================================================
+# AUDIO ENDPOINTS
+# ============================================================================
+
+@app.get("/audio/segment/{segment_id}")
+async def get_segment_audio(segment_id: str):
+    """Get pre-generated audio for a segment"""
+    # This would be implemented with audio caching/generation
+    raise HTTPException(status_code=501, detail="Not yet implemented")
+
+
+@app.get("/stream/session")
+async def stream_radio_session(duration_minutes: int = 60):
+    """Stream a complete radio session"""
     
     async def generate():
-        """Generator that produces radio session content"""
-        # This is a simplified version - in reality you'd:
-        # 1. Fetch music from Plex
-        # 2. Get Last.fm taste profile
-        # 3. Generate segments based on time/context
-        # 4. Mix in news headlines
-        # 5. Generate host transitions
-        # 6. Output as stream
+        # Build session
+        builder = SessionBuilder(duration_minutes)
         
-        session_data = {
-            "session_id": datetime.now().isoformat(),
-            "config": user_config,
-            "segments": [
-                {
-                    "type": "host_intro",
-                    "host": user_config["host_personality"],
-                    "text": "Hey! It's your station, let's make this count."
-                },
-                {
-                    "type": "music",
-                    "source": "plex",
-                    "artist": "Your Top Artist",
-                    "track": "Your Favorite Song"
-                },
-                {
-                    "type": "host_transition",
-                    "text": "Smooth track. Anyway..."
-                },
-                {
-                    "type": "news",
-                    "headline": "Today's headlines incoming",
-                    "source": "bbc"
-                },
-                {
-                    "type": "ad_lib",
-                    "text": "This segment brought to you by..."
-                }
-            ]
-        }
+        # Get music tracks
+        music_tracks = []
+        if plex_client:
+            try:
+                music_tracks = await plex_client.get_library_tracks("1", limit=100)
+            except:
+                pass
         
-        # Yield as NDJSON (newline-delimited JSON)
-        for segment in session_data["segments"]:
-            yield json.dumps(segment).encode() + b"\n"
+        # Build segments
+        segments = await builder.build(
+            music_tracks=music_tracks,
+            host_generator=generate_host_segment,
+            news_service=news_service,
+            host_personality=user_config["host_personality"]
+        )
+        
+        # Stream as NDJSON
+        for segment in segments:
+            yield json.dumps({
+                "type": segment.type,
+                "duration": segment.duration_seconds,
+                "content": segment.content,
+                "host": segment.host,
+                "generated_at": segment.generated_at
+            }).encode() + b"\n"
     
     return StreamingResponse(generate(), media_type="application/x-ndjson")
 
 
-@app.post("/schedule")
-async def set_schedule(schedule: dict):
-    """Set time-based schedule for content types"""
-    # Example: {"06:00": "workout", "09:00": "commute", "12:00": "chill"}
-    return {"status": "scheduled", "schedule": schedule}
+# ============================================================================
+# TTS PROVIDER MANAGEMENT
+# ============================================================================
+
+@app.get("/tts/providers")
+async def list_tts_providers():
+    """List available TTS providers"""
+    return {
+        "current": TTS_PROVIDER,
+        "available": ["google", "elevenlabs"],
+        "hosts": {
+            "alex": HOST_PROFILES["alex"]["tts_voice_id"],
+            "jordan": HOST_PROFILES["jordan"]["tts_voice_id"]
+        }
+    }
+
+
+@app.post("/tts/switch")
+async def switch_tts_provider(provider: str):
+    """Switch between TTS providers"""
+    if provider not in ["google", "elevenlabs"]:
+        raise HTTPException(status_code=400, detail="Invalid TTS provider")
+    
+    global user_config
+    user_config["tts_provider"] = provider
+    
+    return {"status": "switched", "provider": provider}
 
 
 if __name__ == "__main__":
