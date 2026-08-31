@@ -25,7 +25,12 @@ services:
     # file was written, and raw.githubusercontent.com's CDN can serve a stale
     # cached copy of an individual file for a few minutes after a push.
     # A shallow git clone always pulls the complete, current tree in one shot.
-    command: bash -c "apt-get update -qq && apt-get install -y -qq git && rm -rf /app && git clone --depth 1 --branch main https://github.com/trippytaco/ai-radio-station.git /app && cd /app && pip install --no-cache-dir -r requirements.txt && cd backend && python radio_api.py"
+    # Clones into a scratch path and copies only backend/ + requirements.txt
+    # into /app, rather than `rm -rf /app` first - /app/logs is the bind
+    # mount below, and you can't rm a mount point from inside the
+    # container ("Device or resource busy"), which silently short-circuited
+    # every earlier version of this command before git clone ever ran.
+    command: bash -c "apt-get update -qq && apt-get install -y -qq git && rm -rf /tmp/app-src && git clone --depth 1 --branch main https://github.com/trippytaco/ai-radio-station.git /tmp/app-src && mkdir -p /app && rm -rf /app/backend && cp -r /tmp/app-src/backend /app/backend && cp /tmp/app-src/requirements.txt /app/requirements.txt && cd /app && pip install --no-cache-dir -r requirements.txt && cd backend && python radio_api.py"
     
     container_name: ai-radio-station
     
