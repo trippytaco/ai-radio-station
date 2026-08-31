@@ -162,6 +162,13 @@ def get_tts_provider() -> TTSProvider:
     return _tts_provider
 
 
+def set_provider(provider_name: str) -> TTSProvider:
+    """Switch the global TTS provider to a new one, replacing the cached instance"""
+    global _tts_provider
+    _tts_provider = TTSFactory.get_provider(provider_name)
+    return _tts_provider
+
+
 async def synthesize_text(text: str, voice_id: str = "alex_female") -> bytes:
     """Convenience function to synthesize text"""
     provider = get_tts_provider()

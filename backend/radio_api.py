@@ -3,8 +3,9 @@ AI Radio Station Backend - Complete Integration
 Includes: Plex streaming, TTS, News, Host generation, Queue management
 """
 
-from fastapi import FastAPI, HTTPException, File, UploadFile
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import httpx
 import json
 from datetime import datetime
@@ -17,11 +18,22 @@ load_dotenv()
 
 app = FastAPI(title="AI Radio Station")
 
+# Allow the frontend dashboard (served from a different origin/host than
+# this API, e.g. a browser on the LAN hitting the NAS) to call these
+# endpoints. Personal single-user home service, so "*" is fine; tighten
+# via ALLOWED_ORIGINS if this is ever exposed beyond the LAN/Tailscale.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Import our new modules
-from tts_service import get_tts_provider, synthesize_text
+from tts_service import get_tts_provider, set_provider as set_tts_provider
 from plex_client import get_plex_client
 from news_service import get_news_service
-from radio_queue import RadioQueue, Segment, SegmentType, SessionBuilder, AudioMixer
+from radio_queue import RadioQueue, SessionBuilder
 
 # Configuration
 PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
@@ -444,10 +456,16 @@ async def switch_tts_provider(provider: str):
     """Switch between TTS providers"""
     if provider not in ["google", "elevenlabs"]:
         raise HTTPException(status_code=400, detail="Invalid TTS provider")
-    
-    global user_config
+
+    global user_config, TTS_PROVIDER
+    try:
+        set_tts_provider(provider)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to switch TTS provider: {str(e)}")
+
     user_config["tts_provider"] = provider
-    
+    TTS_PROVIDER = provider
+
     return {"status": "switched", "provider": provider}
 
 

@@ -3,10 +3,10 @@ News Service
 Fetch headlines from multiple sources
 """
 
+import asyncio
 import os
 from typing import List, Dict, Any, Optional
 import httpx
-from datetime import datetime
 
 
 class NewsSource:
@@ -159,11 +159,11 @@ class NewsService:
         if source and source in self.sources:
             return await self.sources[source].get_headlines(limit)
         
-        # Get from all sources
-        all_headlines = []
-        for src in self.sources.values():
-            headlines = await src.get_headlines(limit)
-            all_headlines.extend(headlines)
+        # Get from all sources concurrently
+        results = await asyncio.gather(
+            *(src.get_headlines(limit) for src in self.sources.values())
+        )
+        all_headlines = [h for headlines in results for h in headlines]
         
         # Sort by date
         all_headlines.sort(

@@ -70,19 +70,11 @@ class PlexClient:
                 tracks = []
                 
                 for track_elem in root.findall("Track"):
-                    # Get parent album/artist info
-                    album = None
-                    artist = None
-                    
-                    for parent in track_elem.findall(".."):
-                        album = parent.get("title")
-                        break
-                    
                     tracks.append({
                         "key": track_elem.get("key"),
                         "title": track_elem.get("title"),
-                        "artist": artist or "Unknown",
-                        "album": album or "Unknown",
+                        "artist": track_elem.get("grandparentTitle", "Unknown"),
+                        "album": track_elem.get("parentTitle", "Unknown"),
                         "duration": int(track_elem.get("duration", 0)) // 1000,  # Convert to seconds
                         "rating_key": track_elem.get("ratingKey")
                     })

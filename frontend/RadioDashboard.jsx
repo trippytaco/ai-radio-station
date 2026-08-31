@@ -17,7 +17,11 @@ const RadioDashboard = () => {
   const [schedule, setSchedule] = useState({});
   const [showSchedule, setShowSchedule] = useState(false);
 
-  const API_BASE = 'http://localhost:8000';
+  // Use whatever host the dashboard itself was loaded from (LAN IP,
+  // Tailscale hostname, localhost, ...) rather than hardcoding localhost,
+  // which only works when viewing the dashboard on the same machine the
+  // API runs on.
+  const API_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
 
   // Fetch current config on load
   useEffect(() => {
@@ -56,7 +60,7 @@ const RadioDashboard = () => {
 
   const startStream = async () => {
     try {
-      const response = await fetch(`${API_BASE}/stream?duration_minutes=60`);
+      const response = await fetch(`${API_BASE}/stream/session?duration_minutes=60`);
       // Handle streaming response (NDJSON)
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -82,10 +86,10 @@ const RadioDashboard = () => {
 
   const generateHostSegment = async (context) => {
     try {
-      const response = await fetch(`${API_BASE}/generate/host-segment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ context })
+      // context/topic are query params on the backend (plain function args,
+      // no request-body model), not a JSON body.
+      const response = await fetch(`${API_BASE}/generate/host-segment?${new URLSearchParams({ context })}`, {
+        method: 'POST'
       });
       const segment = await response.json();
       setCurrentSegment(segment);
@@ -151,7 +155,15 @@ const RadioDashboard = () => {
           {currentSegment ? (
             <div className="bg-slate-700 rounded p-4">
               <p className="text-sm text-cyan-400 mb-2">{currentSegment.type}</p>
-              <p className="text-slate-200">{currentSegment.text}</p>
+              <p className="text-slate-200">
+                {/* /generate/host-segment returns text at the top level;
+                    /stream/session segments nest it under content
+                    (content.text for spoken segments, artist/title for music) */}
+                {currentSegment.text
+                  || currentSegment.content?.text
+                  || (currentSegment.content?.artist && `${currentSegment.content.artist} - ${currentSegment.content.title}`)
+                  || ''}
+              </p>
               {currentSegment.host && (
                 <p className="text-xs text-slate-500 mt-2">Host: {currentSegment.host}</p>
               )}
