@@ -107,12 +107,12 @@ class ElevenLabsTTS(TTSProvider):
         try:
             voice = self.voices.get(voice_id, self.voices["default"])
             
-            audio = self.client.generate(
+            audio = self.client.text_to_speech.convert(
+                voice_id=voice,
                 text=text,
-                voice=voice,
-                model="eleven_monolingual_v1"
+                model_id="eleven_multilingual_v2"
             )
-            
+
             # Convert generator to bytes
             audio_bytes = b"".join(audio)
             return audio_bytes

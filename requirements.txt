@@ -2,7 +2,7 @@ fastapi==0.104.1
 uvicorn==0.24.0
 httpx==0.25.1
 python-dotenv==1.0.0
-pydantic==2.5.0
+pydantic>=2.5,<3
 
 # Audio & TTS
 pydub==0.25.1
@@ -13,7 +13,7 @@ numpy==1.26.2
 google-cloud-texttospeech==2.14.1
 
 # ElevenLabs TTS
-elevenlabs==0.2.24
+elevenlabs>=1.0.0,<3
 
 # Plex
 plexapi==4.15.0

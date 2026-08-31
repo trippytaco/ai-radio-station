@@ -329,7 +329,7 @@ async def generate_host_segment(
                     "content-type": "application/json"
                 },
                 json={
-                    "model": "claude-3-5-sonnet-20241022",
+                    "model": "claude-sonnet-5",
                     "max_tokens": 200,
                     "messages": [{"role": "user", "content": prompt}]
                 },
