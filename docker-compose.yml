@@ -57,10 +57,6 @@ services:
       SERVER_PORT: 8000
       DEBUG: ${DEBUG:-false}
     
-    # Mount .env file if using one
-    env_file:
-      - .env
-    
     # Volume mounts
     volumes:
       # Logs directory
