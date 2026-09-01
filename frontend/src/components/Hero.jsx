@@ -27,6 +27,15 @@ function PauseIcon() {
   )
 }
 
+function SkipIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M6 5v14l10-7z" />
+      <rect x="17" y="5" width="3" height="14" />
+    </svg>
+  )
+}
+
 function upNextHint(config) {
   const { music_weight: m = 0, news_weight: n = 0, ad_weight: a = 0 } = config
   const total = m + n + a
@@ -46,7 +55,8 @@ export default function Hero({
   togglePlayback,
   currentSegment,
   nowPlayingTrack,
-  onOpenSheet
+  onOpenSheet,
+  onSkip
 }) {
   const preset = CONTEXTS[config.context] || CONTEXTS.commute
   const activeHosts = (config.active_hosts || [config.host_personality])
@@ -86,13 +96,25 @@ export default function Hero({
         </div>
 
         <div className="flex flex-col items-center gap-6 py-6">
-          <button
-            onClick={togglePlayback}
-            className="w-20 h-20 rounded-full bg-accent border-2 border-white flex items-center justify-center text-white active:scale-95 transition-transform shadow-lg"
-            aria-label={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? <PauseIcon /> : <PlayIcon />}
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={togglePlayback}
+              className="w-20 h-20 rounded-full bg-accent border-2 border-white flex items-center justify-center text-white active:scale-95 transition-transform shadow-lg"
+              aria-label={isPlaying ? 'Pause' : 'Play'}
+            >
+              {isPlaying ? <PauseIcon /> : <PlayIcon />}
+            </button>
+            {isPlaying && (
+              <button
+                onClick={onSkip}
+                className="w-11 h-11 rounded-full bg-white/10 border-2 border-white/60 flex items-center justify-center text-white active:scale-95 transition-transform"
+                aria-label="Skip to next song"
+                title="Skip song"
+              >
+                <SkipIcon />
+              </button>
+            )}
+          </div>
 
           <div className="w-full max-w-md text-center fade-in" key={title}>
             <p className="font-display text-[11px] tracking-[0.3em] text-accent font-bold">{kicker}</p>

@@ -3,9 +3,16 @@ import { api, ApiError } from '../api'
 import { CONTEXTS } from '../constants/contexts'
 import { useLocalStorage } from './useLocalStorage'
 
-const TICK_MS = 12000
 const SEGMENT_MAX_DISPLAY_MS = 9000
 const DUCK_VOLUME_SCALE = 0.15
+// Auto-generated host talk (ad/news, not manual requests) only fires near
+// a track's intro or outro - never mid-song. A fixed interval timer used
+// to fire regardless of playback position, which is exactly what made it
+// feel wrong ("host talking over the middle of a song like a real DJ
+// wouldn't"). Very short tracks (shorter than both windows combined)
+// only get one shot, via the intro window.
+const INTRO_WINDOW_SEC = 12
+const OUTRO_WINDOW_SEC = 12
 
 const DEFAULT_CONFIG = {
   music_weight: 0.5,
@@ -47,8 +54,9 @@ export function useRadioEngine() {
   const segmentAudioRef = useRef(null)
   const musicQueueRef = useRef([])
   const musicIndexRef = useRef(0)
-  const tickTimerRef = useRef(null)
   const segmentTimeoutRef = useRef(null)
+  const introTriggeredRef = useRef(false) // has this track's intro window already been used
+  const outroTriggeredRef = useRef(false)
   const configRef = useRef(config)
   configRef.current = config
   // True from the moment a segment starts generating until its audio (or
@@ -158,10 +166,17 @@ export function useRadioEngine() {
     setNowPlayingTrack(track)
     musicAudioRef.current.src = api.audioUrl(track.stream_url)
     musicAudioRef.current.volume = volume
+    introTriggeredRef.current = false
+    outroTriggeredRef.current = false
     musicAudioRef.current.play().catch(() => {
       /* autoplay may be blocked until a user gesture - Play button click counts */
     })
   }, [volume])
+
+  const skipTrack = useCallback(() => {
+    if (!isPlaying) return
+    playNextTrack()
+  }, [isPlaying, playNextTrack])
 
   // --- host segment generation & playback ------------------------------------
   const playSegmentAudio = useCallback((audioUrl, onDone) => {
@@ -245,12 +260,12 @@ export function useRadioEngine() {
     [isPlaying, runSegment]
   )
 
-  // --- the "live station" tick loop ------------------------------------------
-  const tick = useCallback(async () => {
-    // Unlike requestSegment, an auto-tick shouldn't queue itself up behind
-    // a segment that's already active - it'll just get another chance on
-    // the next tick. Queueing every tick would make requests pile up
-    // behind auto-generated ones the listener never asked for.
+  // --- auto-generated host talk, gated to a track's intro/outro only ---------
+  const attemptAutoSegment = useCallback(async () => {
+    // An auto-trigger shouldn't queue itself up behind a segment that's
+    // already active - it'll get another chance at the next track's
+    // intro/outro. Queueing every attempt would pile auto-generated talk
+    // up behind things the listener never asked for.
     if (segmentActiveRef.current) return
 
     const cfg = configRef.current
@@ -269,9 +284,39 @@ export function useRadioEngine() {
       const headline = headlines[Math.floor(Math.random() * headlines.length)]
       runSegment('news_banter', headline ? headline.title : undefined)
     } catch {
-      runSegment('transition') // news unavailable this tick, fall back
+      runSegment('transition') // news unavailable this attempt, fall back
     }
   }, [runSegment])
+
+  // Fires attemptAutoSegment at most once per track, only while inside the
+  // first/last INTRO_WINDOW_SEC/OUTRO_WINDOW_SEC of it - never mid-song.
+  // Whether anything actually plays is still gated by attemptAutoSegment's
+  // own weighted roll (ad_weight/news_weight), so most windows pass silently.
+  useEffect(() => {
+    const el = musicAudioRef.current
+    if (!el) return
+
+    const onTimeUpdate = () => {
+      if (!isPlaying) return
+      const { currentTime, duration } = el
+      if (!duration || Number.isNaN(duration)) return
+
+      if (currentTime <= INTRO_WINDOW_SEC && !introTriggeredRef.current) {
+        introTriggeredRef.current = true
+        attemptAutoSegment()
+      } else if (
+        duration - currentTime <= OUTRO_WINDOW_SEC &&
+        duration > INTRO_WINDOW_SEC + OUTRO_WINDOW_SEC && // short tracks: intro window only, avoid an immediate double-fire
+        !outroTriggeredRef.current
+      ) {
+        outroTriggeredRef.current = true
+        attemptAutoSegment()
+      }
+    }
+
+    el.addEventListener('timeupdate', onTimeUpdate)
+    return () => el.removeEventListener('timeupdate', onTimeUpdate)
+  }, [isPlaying, attemptAutoSegment])
 
   const play = useCallback(async () => {
     setError(null)
@@ -303,15 +348,18 @@ export function useRadioEngine() {
     }
     setIsPlaying(true)
     playNextTrack()
+    // playNextTrack() just reset introTriggeredRef to false for this track;
+    // mark it used since we're explicitly opening with an intro segment
+    // here, so the timeupdate-driven window check doesn't also fire one
+    // moments later for the same track.
+    introTriggeredRef.current = true
     runSegment('intro')
-    tickTimerRef.current = setInterval(tick, TICK_MS)
-  }, [loadMusicQueue, playNextTrack, runSegment, tick, reportError])
+  }, [loadMusicQueue, playNextTrack, runSegment, reportError])
 
   const pause = useCallback(() => {
     setIsPlaying(false)
     musicAudioRef.current?.pause()
     segmentAudioRef.current?.pause()
-    clearInterval(tickTimerRef.current)
     clearTimeout(segmentTimeoutRef.current)
     segmentActiveRef.current = false
     pendingRequestRef.current = null
@@ -381,7 +429,6 @@ export function useRadioEngine() {
 
   useEffect(() => {
     return () => {
-      clearInterval(tickTimerRef.current)
       clearTimeout(segmentTimeoutRef.current)
     }
   }, [])
@@ -399,6 +446,7 @@ export function useRadioEngine() {
     nowPlayingTrack,
     recentTalk,
     requestSegment,
+    skipTrack,
     error,
     dismissError: () => setError(null),
     retryLoadTracks: loadMusicQueue,

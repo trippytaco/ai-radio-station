@@ -24,6 +24,7 @@ export default function App() {
           currentSegment={engine.currentSegment}
           nowPlayingTrack={engine.nowPlayingTrack}
           onOpenSheet={() => setSheetOpen(true)}
+          onSkip={engine.skipTrack}
         />
 
         <div className="p-4 sm:p-6 grid gap-4 sm:grid-cols-2">
