@@ -293,14 +293,25 @@ python backend/radio_api.py
 ```
 ai-radio-station/
 ├── backend/
-│   └── radio_api.py           # FastAPI server
-├── frontend/
-│   └── RadioDashboard.jsx     # React dashboard
-├── Dockerfile                 # Container config
-├── docker-compose.yml         # Docker orchestration
-├── requirements.txt           # Python dependencies
-├── .env.example              # Environment template
-└── README.md                 # This file
+│   ├── radio_api.py           # FastAPI server
+│   ├── tts_service.py         # Google Cloud / ElevenLabs TTS
+│   ├── plex_client.py         # Plex library + streaming
+│   ├── news_service.py        # BBC / Guardian / CNN headlines
+│   └── radio_queue.py         # Session building, segment queue
+├── frontend/                  # Vite + React + Tailwind PWA (RadioMe)
+│   ├── src/
+│   ├── Dockerfile              # Multi-stage: node build -> nginx serve
+│   └── nginx.conf
+├── tests/                     # pytest suite (backend) - see "Automated Tests"
+├── Dockerfile                  # Backend container config (currently unused
+│                                # by docker-compose.yml's ai-radio service,
+│                                # which fetches code at container start instead)
+├── docker-compose.yml          # Backend + frontend, single stack
+├── docker-compose.frontend.yml # Frontend-only fallback for hosts with no
+│                                # git binary - see scripts/deploy-frontend.sh
+├── requirements.txt            # Python dependencies
+├── .env.example                # Environment template
+└── README.md                   # This file
 ```
 
 ---
@@ -310,31 +321,58 @@ ai-radio-station/
 ### Docker Compose (Recommended)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
+
+Builds and starts both `ai-radio` (backend) and `ai-radio-frontend`
+(the PWA, served on port 8090) from a single `docker-compose.yml`. This
+needs a `git` binary on the Docker host itself - the frontend service
+builds via a git-context (`build: context: <repo-url>#main:frontend`),
+and Docker's BuildKit shells out to the host's own git for that. No git
+on the host, no build.
 
 ### Portainer (GUI)
 
-See `PORTAINER_QUICK_START.md` for step-by-step guide.
+Stacks → Add Stack → paste `docker-compose.yml` → add the environment
+variables listed at the top of that file → Deploy. Updating either
+service later means re-pasting and "Update the stack" - a plain restart
+doesn't pick up code or env var changes, only a full stack update does.
 
-### QNAP Deployment
+### No git on the Docker host?
 
-See `SSH_DEPLOYMENT_GUIDE.md` for full setup on QNAP.
+Use `docker-compose.frontend.yml` + `scripts/deploy-frontend.sh` instead
+for the frontend (backend is unaffected either way - it fetches its own
+code via `git clone` inside the running container, which only needs git
+inside that container's image, not on the host). The script clones
+through an `alpine/git` container rather than needing git installed
+anywhere on the host itself:
+
+```bash
+./scripts/deploy-frontend.sh
+```
+
+Re-run it any time to pick up frontend changes; it's idempotent (pulls if
+already cloned, clones fresh otherwise).
 
 ---
 
 ## Next Steps
 
-### Phase 1 (Current)
-- [x] Backend API with Plex + Last.fm + Claude
-- [x] Dashboard UI for controls
-- [x] Docker configuration
-- [x] Portainer deployment guide
+### Done
+- [x] Backend API: Plex, Last.fm, news (BBC/Guardian/CNN), Claude-generated
+      host segments
+- [x] Text-to-Speech for host voiceovers (Google Cloud / ElevenLabs)
+- [x] RadioMe frontend: real Vite/React/Tailwind PWA, background audio
+      playback (music queue + generated segment audio), mix sliders,
+      context presets, host toggles, topics & news, PWA install
+- [x] Single-stack Docker/Portainer deployment
+- [x] pytest suite (62 tests) covering every backend endpoint/module
 
-### Phase 2 (Coming)
-- [ ] Text-to-Speech for host voiceovers (ElevenLabs/Google)
-- [ ] Audio mixing (music + voiceover)
-- [ ] Real streaming audio output
+### Coming
+- [ ] Real app icons (currently a placeholder SVG only)
+- [ ] Real photography for the hero banners (currently CSS gradient placeholders)
+- [ ] Audio mixing/ducking server-side (currently client-side volume ducking only)
+- [ ] Frontend automated tests
 - [ ] Session recording/playback
 
 ### Phase 3 (Future)
@@ -373,11 +411,9 @@ MIT
 
 ## Support
 
-For issues, check:
-- `README.md` - This file
-- `PORTAINER_QUICK_START.md` - Portainer deployment
-- `SETUP.md` - Full setup guide
-- `ADVANCED.md` - Advanced features
+This README is the only doc file in the repo - everything else (deploy
+steps, testing, credentials, troubleshooting) lives in the sections
+above.
 
 ---
 

@@ -23,8 +23,13 @@ version: '3.8'
 # - GOOGLE_CLOUD_CREDENTIALS_JSON (base64-encoded service account key JSON - see README)
 # - ELEVENLABS_API_KEY
 #
-# This file is backend only. The frontend is a separate deploy - see
-# docker-compose.frontend.yml and scripts/deploy-frontend.sh.
+# Frontend (ai-radio-frontend, below): a real `docker build` from this
+# repo's git history, needs a `git` binary on the Docker host itself
+# (confirmed live - earlier this host had none, and both BuildKit's
+# git-context fetch and the legacy builder failed on it; now installed).
+# If deploying somewhere without git on the host, use
+# docker-compose.frontend.yml + scripts/deploy-frontend.sh instead, which
+# works around that by cloning through a container.
 
 services:
   ai-radio:
@@ -118,18 +123,35 @@ services:
     networks:
       - ai-radio-network
 
-# The frontend is NOT a service in this file - see docker-compose.frontend.yml.
-#
-# Why separate: this file is designed to be pasted ad-hoc into Portainer's
-# stack editor (no local checkout needed - the ai-radio service pulls its
-# own code via git clone at container start). The frontend needs a real
-# `docker build`, and this QNAP's Docker has no git binary on the host
-# itself (confirmed live) - a `build: context: <git-url>` here would fail
-# the same way a plain `docker build <git-url>` does. A LOCAL build
-# context works fine, but that means this compose file would need to live
-# inside an actual git checkout on the QNAP, which the ad-hoc-paste model
-# above doesn't have. See scripts/deploy-frontend.sh, which sets up that
-# checkout and builds+runs the frontend from it.
+  ai-radio-frontend:
+    # Real image build (Node build stage -> nginx serve stage), not a
+    # runtime install - see frontend/Dockerfile for why that matters
+    # (tonight's backend deploy problems were all downstream of the
+    # "install everything on every container start" pattern; this
+    # avoids it entirely). Portainer builds this from the git context
+    # when you deploy/update the stack - expect ~5-10 minutes on first
+    # build (mostly `npm install`); a plain `docker restart` just
+    # restarts the already-built image, no rebuild.
+    build:
+      context: https://github.com/trippytaco/ai-radio-station.git#main:frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-https://radiome.orosz.cc}
+
+    container_name: ai-radio-frontend
+
+    # Port 8080 was already taken by something else on this QNAP
+    # (confirmed live, not a Docker container - likely a QTS system
+    # service) - 8090 is free. Adjust if it collides on your host.
+    ports:
+      - "8090:80"
+
+    restart: unless-stopped
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 # Network configuration
 networks:
