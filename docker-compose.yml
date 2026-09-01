@@ -22,6 +22,11 @@ version: '3.8'
 # - TTS_PROVIDER (default: google)
 # - GOOGLE_CLOUD_CREDENTIALS_JSON (base64-encoded service account key JSON - see README)
 # - ELEVENLABS_API_KEY
+#
+# Frontend (ai-radio-frontend, below) has no required env vars - it's a
+# static build, served on port 8080. Point a browser at
+# http://<qnap-ip>:8080 (or set up a reverse-proxy hostname for it, same
+# as radiome.orosz.cc / plex.orosz.cc).
 
 services:
   ai-radio:
@@ -112,6 +117,33 @@ services:
         max-file: "3"
     
     # Network
+    networks:
+      - ai-radio-network
+
+  ai-radio-frontend:
+    # Real image build (Node build stage -> nginx serve stage), not a
+    # runtime install - see frontend/Dockerfile for why that matters.
+    # Portainer builds this from the git context when you deploy/update
+    # the stack; a plain `docker restart` just restarts the already-built
+    # image (no network access needed, unlike the backend service above).
+    build:
+      context: https://github.com/trippytaco/ai-radio-station.git#main:frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-https://radiome.orosz.cc}
+
+    container_name: ai-radio-frontend
+
+    ports:
+      - "8080:80"
+
+    restart: unless-stopped
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
     networks:
       - ai-radio-network
 
