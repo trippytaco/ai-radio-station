@@ -101,6 +101,44 @@ SEARCH_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </MediaContainer>
 """
 
+TRACK_METADATA_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1">
+    <Track ratingKey="85916" key="/library/metadata/85916" title="Troubled Son">
+        <Media id="106553" container="flac">
+            <Part id="106553" key="/library/parts/106553/1691252651/file.flac" file="/music/x/y.flac"/>
+        </Media>
+    </Track>
+</MediaContainer>
+"""
+
+
+@respx.mock
+async def test_get_track_stream_url_resolves_the_real_part_path(plex):
+    """
+    Regression test: get_track_stream_url() used to guess
+    /library/metadata/{ratingKey}/file, which isn't a real Plex endpoint
+    and 400s - confirmed live. The actual streamable path lives on the
+    track's Media/Part element and has to be looked up.
+    """
+    respx.get(f"{PLEX_URL}/library/metadata/85916").mock(
+        return_value=httpx.Response(200, content=TRACK_METADATA_XML, headers={"content-type": "application/xml"})
+    )
+
+    url = await plex.get_track_stream_url("85916")
+
+    assert url == f"{PLEX_URL}/library/parts/106553/1691252651/file.flac?X-Plex-Token=fake-token"
+
+
+@respx.mock
+async def test_get_track_stream_url_raises_when_no_part(plex):
+    xml = '<?xml version="1.0"?><MediaContainer><Track ratingKey="1" title="No file"/></MediaContainer>'
+    respx.get(f"{PLEX_URL}/library/metadata/1").mock(
+        return_value=httpx.Response(200, content=xml, headers={"content-type": "application/xml"})
+    )
+
+    with pytest.raises(RuntimeError, match="No playable file"):
+        await plex.get_track_stream_url("1")
+
 
 @respx.mock
 async def test_search_tracks_extracts_artist_and_album(plex):

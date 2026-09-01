@@ -237,6 +237,25 @@ export function useRadioEngine() {
 
   const play = useCallback(async () => {
     setError(null)
+
+    // Browsers only allow audio.play() to succeed without a rejected
+    // promise when it's called synchronously within a real user gesture
+    // (this click handler) or shortly after. Everything below this point
+    // is async (loading the music queue, generating the intro segment),
+    // which loses that "user activation" context - a .play() call after
+    // an await gets silently blocked by autoplay policy, which is
+    // exactly why neither music nor generated segments were audible
+    // (confirmed live: no errors shown, just silence).
+    //
+    // The fix: call .play() on both elements synchronously, right here,
+    // before any await. They have no src yet so this immediately rejects
+    // - that's fine and expected, we just need the *attempt* to happen
+    // inside the gesture to "unlock" each element for this session, so
+    // the real .play() calls later (after the async work below) are
+    // allowed through.
+    musicAudioRef.current?.play().catch(() => {})
+    segmentAudioRef.current?.play().catch(() => {})
+
     if (!musicQueueRef.current.length) {
       const tracks = await loadMusicQueue()
       if (!tracks.length) {
@@ -271,6 +290,33 @@ export function useRadioEngine() {
     el.addEventListener('ended', handleEnded)
     return () => el.removeEventListener('ended', handleEnded)
   }, [playNextTrack])
+
+  // Surface real playback failures instead of failing silently - a prior
+  // version had no error handling here at all, so a broken stream URL (or
+  // an autoplay-policy block) just looked like "nothing happens," with no
+  // way to tell what was actually wrong from the UI.
+  useEffect(() => {
+    const musicEl = musicAudioRef.current
+    const segmentEl = segmentAudioRef.current
+    if (!musicEl || !segmentEl) return
+
+    const onMusicError = () => {
+      if (!musicEl.src) return // no src set yet (e.g. the priming play() on Play) - not a real failure
+      reportError(null, "Couldn't play that track - skipping to the next one")
+      playNextTrack()
+    }
+    const onSegmentError = () => {
+      if (!segmentEl.src) return
+      reportError(null, "Couldn't play the generated audio segment")
+    }
+
+    musicEl.addEventListener('error', onMusicError)
+    segmentEl.addEventListener('error', onSegmentError)
+    return () => {
+      musicEl.removeEventListener('error', onMusicError)
+      segmentEl.removeEventListener('error', onSegmentError)
+    }
+  }, [playNextTrack, reportError])
 
   // Media Session API - lock screen / notification controls
   useEffect(() => {

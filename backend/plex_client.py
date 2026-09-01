@@ -99,8 +99,29 @@ class PlexClient:
             raise RuntimeError(f"Plex tracks fetch error: {str(e)}")
     
     async def get_track_stream_url(self, rating_key: str) -> str:
-        """Get stream URL for a track"""
-        return f"{self.url}/library/metadata/{rating_key}/file?X-Plex-Token={self.token}"
+        """
+        Get the actual streamable file URL for a track.
+
+        /library/metadata/{ratingKey}/file is not a real Plex endpoint (it
+        400s - confirmed live) - the real streamable path lives on the
+        track's <Media><Part key="..."> element, e.g.
+        /library/parts/{id}/{timestamp}/file.flac, which has to be looked
+        up from the track's own metadata first.
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.url}/library/metadata/{rating_key}",
+                headers=self._get_headers(),
+                timeout=10.0
+            )
+            response.raise_for_status()
+
+            root = ET.fromstring(response.content)
+            part = root.find(".//Part")
+            if part is None or not part.get("key"):
+                raise RuntimeError(f"No playable file found for track {rating_key}")
+
+            return f"{self.url}{part.get('key')}?X-Plex-Token={self.token}"
     
     async def get_random_track(self, library_key: str) -> Optional[Dict[str, Any]]:
         """Get a random track from library"""

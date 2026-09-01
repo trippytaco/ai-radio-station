@@ -3,7 +3,7 @@ AI Radio Station Backend - Complete Integration
 Includes: Plex streaming, TTS, News, Host generation, Queue management
 """
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import httpx
@@ -14,7 +14,6 @@ from typing import Optional
 import os
 import uuid
 from dotenv import load_dotenv
-import io
 
 load_dotenv()
 
@@ -201,27 +200,65 @@ async def get_plex_tracks(library_key: str = "1", limit: int = 50):
 
 
 @app.get("/plex/stream/{rating_key}")
-async def stream_plex_track(rating_key: str):
-    """Stream a track from Plex"""
+async def stream_plex_track(rating_key: str, request: Request):
+    """
+    Proxy-stream a track from Plex. Tracks here are lossless FLAC and can
+    run 40-50MB+, so this genuinely streams (chunk by chunk, no full
+    in-memory buffering) and forwards Range requests - without Range
+    support, <audio> playback has to wait for the entire file to download
+    before it can start, and can't seek.
+    """
     if not plex_client:
         raise HTTPException(status_code=500, detail="Plex client not available")
-    
+
     try:
         stream_url = await plex_client.get_track_stream_url(rating_key)
-        
-        # Proxy the stream from Plex
-        async with httpx.AsyncClient() as client:
-            response = await client.get(stream_url, follow_redirects=True)
-            response.raise_for_status()
-            
-            return StreamingResponse(
-                io.BytesIO(response.content),
-                media_type="audio/mpeg",
-                headers={"Content-Disposition": f"inline; filename=track.mp3"}
-            )
-    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Stream error: {str(e)}")
+        # Deliberately not including str(e) here - it can contain the
+        # upstream URL with the Plex token embedded as a query param
+        # (confirmed live: an earlier version of this leaked the real
+        # token to any client that hit a broken track).
+        print(f"Plex stream resolve error for {rating_key}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Could not resolve this track on Plex")
+
+    client = httpx.AsyncClient()
+    forward_headers = {}
+    if request.headers.get("range"):
+        forward_headers["Range"] = request.headers["range"]
+
+    try:
+        req = client.build_request("GET", stream_url, headers=forward_headers)
+        upstream = await client.send(req, stream=True)
+    except Exception as e:
+        await client.aclose()
+        print(f"Plex stream fetch error for {rating_key}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Plex for this track")
+
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=502, detail=f"Plex returned {upstream.status_code} for this track")
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await upstream.aclose()
+            await client.aclose()
+
+    passthrough_headers = {}
+    for h in ("content-length", "content-range", "accept-ranges"):
+        if h in upstream.headers:
+            passthrough_headers[h] = upstream.headers[h]
+    passthrough_headers.setdefault("accept-ranges", "bytes")
+
+    return StreamingResponse(
+        body(),
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "audio/mpeg"),
+        headers=passthrough_headers
+    )
 
 
 # ============================================================================
