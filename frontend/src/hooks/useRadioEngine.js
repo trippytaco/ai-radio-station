@@ -277,14 +277,27 @@ export function useRadioEngine() {
             runSegment(pending.context, pending.topic)
           }
         }
-        // Always revert after SEGMENT_MAX_DISPLAY_MS at the latest, even
-        // if audio plays longer or shorter, or there's no audio at all.
-        segmentTimeoutRef.current = setTimeout(revert, SEGMENT_MAX_DISPLAY_MS)
         if (result.audio_available) {
+          // Confirmed live: this used to also arm the SEGMENT_MAX_DISPLAY_MS
+          // (9s) fallback here, unconditionally - but the prompts ask for
+          // 10-30s segments depending on context, so real TTS audio is
+          // routinely longer than that. The fallback fired first, un-ducking
+          // the music and clearing the "now talking" display while the host
+          // was still audibly mid-sentence, then the audio kept playing
+          // underneath full-volume music until it naturally ended - exactly
+          // the "timing is off" mismatch between what's shown and what's
+          // heard. Real audio reverts on its own 'ended' event; this timer
+          // is now just a safety net in case that event never fires
+          // (a stalled connection, etc.), set well past any real segment.
+          segmentTimeoutRef.current = setTimeout(revert, 60000)
           playSegmentAudio(result.audio_url, () => {
             clearTimeout(segmentTimeoutRef.current)
             revert()
           })
+        } else {
+          // No audio (TTS unavailable/failed) - just leave the text up long
+          // enough to be readable, then revert.
+          segmentTimeoutRef.current = setTimeout(revert, SEGMENT_MAX_DISPLAY_MS)
         }
       } catch (err) {
         reportError(err, "Couldn't generate that segment")
