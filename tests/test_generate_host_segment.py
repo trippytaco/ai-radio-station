@@ -145,3 +145,18 @@ def test_generate_host_segment_safe_mode_and_topics_reach_the_prompt(client):
     prompt = sent["messages"][0]["content"]
     assert "family-friendly" in prompt
     assert "space, cricket" in prompt
+
+
+@respx.mock
+def test_ad_lib_topic_hint_reaches_the_prompt(client):
+    """A category hint (passed as topic) steers ad_lib generation, giving
+    each ad a fresh angle instead of always producing similarly generic
+    fake products."""
+    respx.post(ANTHROPIC_URL).mock(return_value=_anthropic_success())
+
+    client.post("/generate/host-segment", params={"context": "ad_lib", "topic": "kitchen gadgets"})
+
+    sent = json.loads(respx.calls.last.request.content)
+    prompt = sent["messages"][0]["content"]
+    assert "kitchen gadgets" in prompt
+    assert "brand name" in prompt

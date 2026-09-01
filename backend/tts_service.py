@@ -71,12 +71,13 @@ class GoogleCloudTTS(TTSProvider):
         credentials = service_account.Credentials.from_service_account_info(info)
         self.client = texttospeech.TextToSpeechClient(credentials=credentials)
 
-        # Voice mappings
+        # Voice mappings - Australian English per user preference
         self.voices = {
-            "alex_female": "en-US-Neural2-C",      # Female, energetic
-            "jordan_male": "en-US-Neural2-A",      # Male, smooth
-            "default": "en-US-Neural2-C"
+            "alex_female": "en-AU-Neural2-C",      # Female
+            "jordan_male": "en-AU-Neural2-B",      # Male
+            "default": "en-AU-Neural2-C"
         }
+        self.language_code = "en-AU"
     
     async def synthesize(self, text: str, voice_id: str = "alex_female") -> bytes:
         """Synthesize text using Google Cloud TTS"""
@@ -86,7 +87,7 @@ class GoogleCloudTTS(TTSProvider):
             synthesis_input = texttospeech.SynthesisInput(text=text)
             
             voice = texttospeech.VoiceSelectionParams(
-                language_code="en-US",
+                language_code=self.language_code,
                 name=voice_name,
             )
             
@@ -125,9 +126,18 @@ class ElevenLabsTTS(TTSProvider):
         # ElevenLabs's end - confirmed live via 404 voice_not_found - and
         # weren't even in this account's actual voice library. Picked from
         # GET /v1/voices against the real account instead of guessing.
+        #
+        # User preference is Australian-accented voices (matches the
+        # Google TTS voices above). Jordan uses Charlie, the one
+        # explicitly-Australian voice in this account's library. No
+        # female Australian voice was available in the account at the
+        # time - Alex stays on Jessica (american) until one's added or
+        # the account's own voice library changes; re-check
+        # GET /v1/voices for a female "australian" labels.gender match
+        # when picking this up again.
         self.voices = {
-            "alex_female": "cgSgspJ2msm6clMCkdW9",  # Jessica - playful, bright, warm
-            "jordan_male": "cjVigY5qzO86Huf0OWal",   # Eric - smooth, trustworthy
+            "alex_female": "cgSgspJ2msm6clMCkdW9",  # Jessica - playful, bright, warm (american - no AU female available)
+            "jordan_male": "IKne3meq5aSn9XLyUdCD",   # Charlie - deep, confident, energetic (australian)
             "default": "cgSgspJ2msm6clMCkdW9"
         }
     

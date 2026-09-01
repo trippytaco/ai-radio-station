@@ -29,7 +29,7 @@ export default function App() {
 
         <div className="p-4 sm:p-6 grid gap-4 sm:grid-cols-2">
           <RecentTalk segments={engine.recentTalk} />
-          <RecentlyPlayed />
+          <RecentlyPlayed history={engine.playHistory} />
         </div>
       </main>
 

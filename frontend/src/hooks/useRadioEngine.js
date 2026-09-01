@@ -26,6 +26,26 @@ const DEFAULT_CONFIG = {
   safe_mode: false
 }
 
+// Product categories to steer ad_lib generation - cycled through without
+// repeats (until the pool is exhausted, then reshuffled) so ads actually
+// vary instead of the model producing similarly-generic fake products
+// every time from an identical, unvaried prompt.
+const AD_THEMES = [
+  'kitchen gadgets', 'fitness equipment', 'skincare', 'pet products',
+  'financial services', 'cleaning products', 'tech gadgets', 'travel',
+  'subscription boxes', 'home security', 'car care', 'diet supplements',
+  'dating apps', 'mattresses', 'energy drinks', 'insurance'
+]
+
+function shuffled(arr) {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
 function weightedPick(weights) {
   // weights: { key: number }. Returns a key, or null if all weights are 0.
   const entries = Object.entries(weights).filter(([, w]) => w > 0)
@@ -46,6 +66,7 @@ export function useRadioEngine() {
   const [currentSegment, setCurrentSegment] = useState(null) // AI-generated talk overlay
   const [nowPlayingTrack, setNowPlayingTrack] = useState(null) // music
   const [recentTalk, setRecentTalk] = useState([])
+  const [playHistory, setPlayHistory] = useState([]) // tracks this station has actually played
   const [error, setError] = useState(null)
   const [volume, setVolumeState] = useLocalStorage('radiome:volume', 0.8)
   const [theme, setTheme] = useLocalStorage('radiome:theme', 'system')
@@ -57,6 +78,8 @@ export function useRadioEngine() {
   const segmentTimeoutRef = useRef(null)
   const introTriggeredRef = useRef(false) // has this track's intro window already been used
   const outroTriggeredRef = useRef(false)
+  const adThemeQueueRef = useRef(shuffled(AD_THEMES)) // pop from this; reshuffle when empty
+  const usedHeadlinesRef = useRef(new Set()) // headline titles already used this session
   const configRef = useRef(config)
   configRef.current = config
   // True from the moment a segment starts generating until its audio (or
@@ -164,6 +187,7 @@ export function useRadioEngine() {
     const track = queue[musicIndexRef.current % queue.length]
     musicIndexRef.current += 1
     setNowPlayingTrack(track)
+    setPlayHistory((prev) => [{ ...track, played_at: new Date().toISOString() }, ...prev].slice(0, 20))
     musicAudioRef.current.src = api.audioUrl(track.stream_url)
     musicAudioRef.current.volume = volume
     introTriggeredRef.current = false
@@ -252,12 +276,21 @@ export function useRadioEngine() {
     [duckMusic, playSegmentAudio, reportError]
   )
 
+  // Pops one theme off the shuffled queue (reshuffling when exhausted) so
+  // ad_lib gets a fresh, non-repeating category each time within a cycle.
+  const nextAdTheme = useCallback(() => {
+    if (adThemeQueueRef.current.length === 0) {
+      adThemeQueueRef.current = shuffled(AD_THEMES)
+    }
+    return adThemeQueueRef.current.pop()
+  }, [])
+
   const requestSegment = useCallback(
     (context) => {
       if (!isPlaying) return
-      runSegment(context)
+      runSegment(context, context === 'ad_lib' ? nextAdTheme() : undefined)
     },
-    [isPlaying, runSegment]
+    [isPlaying, runSegment, nextAdTheme]
   )
 
   // --- auto-generated host talk, gated to a track's intro/outro only ---------
@@ -273,20 +306,27 @@ export function useRadioEngine() {
     if (!pick) return
 
     if (pick === 'ad') {
-      runSegment('ad_lib')
+      runSegment('ad_lib', nextAdTheme())
       return
     }
 
-    // news: pull a headline from enabled sources to hand the host a topic
+    // news: pull a headline from enabled sources, skipping ones already
+    // used this session so the same story doesn't get read out twice.
     try {
-      const res = await api.getNewsHeadlines(undefined, 5)
+      const res = await api.getNewsHeadlines(undefined, 20)
       const headlines = res.headlines || []
-      const headline = headlines[Math.floor(Math.random() * headlines.length)]
-      runSegment('news_banter', headline ? headline.title : undefined)
+      const fresh = headlines.filter((h) => h.title && !usedHeadlinesRef.current.has(h.title))
+      if (fresh.length === 0) {
+        runSegment('transition') // nothing unused right now, don't repeat - just transition
+        return
+      }
+      const headline = fresh[Math.floor(Math.random() * fresh.length)]
+      usedHeadlinesRef.current.add(headline.title)
+      runSegment('news_banter', headline.title)
     } catch {
       runSegment('transition') // news unavailable this attempt, fall back
     }
-  }, [runSegment])
+  }, [runSegment, nextAdTheme])
 
   // Fires attemptAutoSegment at most once per track, only while inside the
   // first/last INTRO_WINDOW_SEC/OUTRO_WINDOW_SEC of it - never mid-song.
@@ -445,6 +485,7 @@ export function useRadioEngine() {
     currentSegment,
     nowPlayingTrack,
     recentTalk,
+    playHistory,
     requestSegment,
     skipTrack,
     error,

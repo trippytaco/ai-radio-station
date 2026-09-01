@@ -381,6 +381,10 @@ already cloned, clones fresh otherwise).
 - [ ] Guest hosts
 - [ ] Multi-user support
 - [ ] Public sharing
+- [ ] New segment type: a "caller" phoning in to talk about a movie or a
+      current-affairs issue (2026-09-01, not scheduled yet)
+- [ ] New segment type: a Triple J Hack-style deep-dive "story of the day"
+      (2026-09-01, not scheduled yet)
 
 ---
 

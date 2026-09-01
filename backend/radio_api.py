@@ -385,10 +385,12 @@ async def generate_host_segment(
         Return ONLY the spoken text, no stage directions."""
     
     elif context == "ad_lib":
+        category_hint = f"\n        The product should be in the general category of: {topic}." if topic else ""
         prompt = f"""You are {host['name']}, a {host['personality']} radio host.
         Generate a hilarious 30-second fake ad read for a completely fictional product.
-        Make it absurd and funny. Commit fully to the bit.
-        Example vibe: "Tired of your life? Try NEW ExistencePro™..."
+        Make it absurd and funny. Commit fully to the bit. Invent a fresh,
+        specific product and brand name - don't reuse a generic/placeholder
+        one like "ExistencePro".{category_hint}
         {safety_note}{topics_note}
         Return ONLY the spoken text, no stage directions."""
     
