@@ -25,6 +25,12 @@ version: '3.8'
 # - GOOGLE_CLOUD_CREDENTIALS_JSON (base64-encoded service account key JSON - see README)
 # - ELEVENLABS_API_KEY
 #
+# Optional (Last.fm scrobbling - reading recent tracks/top artists only
+# needs LASTFM_API_KEY above; scrobbling is a write operation and needs
+# these two as well, see README for the one-time setup):
+# - LASTFM_API_SECRET
+# - LASTFM_SESSION_KEY
+#
 # Frontend (ai-radio-frontend, below): a real `docker build` from this
 # repo's git history, needs a `git` binary on the Docker host itself
 # (confirmed live - earlier this host had none, and both BuildKit's
@@ -64,7 +70,9 @@ services:
       # Last.fm Configuration
       LASTFM_API_KEY: ${LASTFM_API_KEY}
       LASTFM_USERNAME: ${LASTFM_USERNAME}
-      
+      LASTFM_API_SECRET: ${LASTFM_API_SECRET:-}
+      LASTFM_SESSION_KEY: ${LASTFM_SESSION_KEY:-}
+
       # Anthropic (Claude) Configuration
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 

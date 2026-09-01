@@ -78,6 +78,17 @@ export const api = {
   getRecentTracks: (limit = 10) =>
     request('/lastfm/recent', { params: { limit } }).then((r) => r.json()),
 
+  getTopArtists: (period = '1month', limit = 20) =>
+    request('/lastfm/top-artists', { params: { period, limit } }).then((r) => r.json()),
+
+  // Both best-effort - callers should swallow errors from these rather
+  // than surfacing them, a failed scrobble/now-playing update shouldn't
+  // interrupt playback.
+  updateNowPlaying: (artist, track, album) =>
+    request('/lastfm/now-playing', { method: 'POST', params: { artist, track, album } }).then((r) => r.json()),
+  scrobbleTrack: (artist, track, timestamp, album) =>
+    request('/lastfm/scrobble', { method: 'POST', params: { artist, track, timestamp, album } }).then((r) => r.json()),
+
   getNewsHeadlines: (source, limit = 5) =>
     request('/news/headlines', { params: { source, limit } }).then((r) => r.json()),
 

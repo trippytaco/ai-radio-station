@@ -1,4 +1,5 @@
 import { CONTEXTS } from '../constants/contexts'
+import { api } from '../api'
 
 function PlayIcon() {
   return (
@@ -78,15 +79,33 @@ export default function Hero({
       ? `${nowPlayingTrack.artist} — ${nowPlayingTrack.album}`
       : preset.tagline
 
+  // Real album art while music is playing (not during talk, and only
+  // when Plex actually has cover art for this track - confirmed live
+  // that's not guaranteed, some library items have no matched metadata
+  // at all). Layered as a CSS background rather than an <img> so a
+  // missing/404 image just falls through to the gradient underneath
+  // instead of leaving a broken-image icon or blank area.
+  const artUrl = !isTalking && nowPlayingTrack?.art_url ? api.audioUrl(nowPlayingTrack.art_url) : null
+  const heroBackground = [
+    'linear-gradient(to top, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.2) 55%, rgba(0,0,0,0.05) 100%)',
+    ...(artUrl ? [`url(${artUrl})`] : []),
+    'radial-gradient(120% 100% at 15% 0%, var(--m3-tertiary-container) 0%, var(--m3-primary) 46%, var(--m3-primary-container) 100%)'
+  ].join(', ')
+
   return (
     <div className="px-4 pt-3 pb-2 sm:px-6">
-      {/* Hero art surface - dynamic-color gradient standing in for
-          album/segment artwork until real photography is wired up. */}
+      {/* Hero art surface - real album art when available, dynamic-color
+          gradient as the fallback (missing art, or a talk segment). */}
       <div
         className="relative w-full rounded-xl overflow-hidden"
         style={{
           minHeight: '58vh',
-          background: 'radial-gradient(120% 100% at 15% 0%, var(--m3-tertiary-container) 0%, var(--m3-primary) 46%, var(--m3-primary-container) 100%)',
+          background: heroBackground,
+          // A single value repeats across every layer (including the
+          // gradient ones, where it's a no-op) - no need to match it to
+          // the exact layer count above.
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
           boxShadow: '0 1px 3px var(--m3-shadow), 0 8px 24px var(--m3-shadow)'
         }}
       >

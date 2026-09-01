@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import httpx
+import hashlib
 import json
 from collections import OrderedDict
 from datetime import datetime
@@ -41,6 +42,15 @@ PLEX_URL = os.getenv("PLEX_URL", "http://localhost:32400")
 PLEX_TOKEN = os.getenv("PLEX_TOKEN")
 LASTFM_API_KEY = os.getenv("LASTFM_API_KEY")
 LASTFM_USERNAME = os.getenv("LASTFM_USERNAME")
+# Only needed for scrobbling (a write operation) - reading recent
+# tracks/top artists works with just LASTFM_API_KEY above. Get the secret
+# from the same place as the API key (last.fm/api/account/create).
+# LASTFM_SESSION_KEY comes from the one-time /lastfm/auth/* handshake
+# below (see README) - it doesn't expire, but there's nowhere to persist
+# it in this deploy, so it has to live in the env like every other
+# credential here.
+LASTFM_API_SECRET = os.getenv("LASTFM_API_SECRET")
+LASTFM_SESSION_KEY = os.getenv("LASTFM_SESSION_KEY")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 TTS_PROVIDER = os.getenv("TTS_PROVIDER", "google")
 
@@ -261,6 +271,36 @@ async def stream_plex_track(rating_key: str, request: Request):
     )
 
 
+@app.get("/plex/art/{rating_key}")
+async def get_plex_art(rating_key: str):
+    """Proxy a track's cover art. Images here are small (unlike the FLAC
+    streams above), so a plain buffered fetch is fine - no need for the
+    streaming/Range machinery /plex/stream needs."""
+    if not plex_client:
+        raise HTTPException(status_code=500, detail="Plex client not available")
+
+    try:
+        art_url = await plex_client.get_track_art_url(rating_key)
+    except Exception as e:
+        # Same reasoning as /plex/stream: never include str(e) here, it
+        # can carry the Plex token embedded in the (failed) upstream URL.
+        print(f"Plex art resolve error for {rating_key}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=404, detail="No cover art available for this track")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(art_url, timeout=10.0, follow_redirects=True)
+            response.raise_for_status()
+            return Response(
+                content=response.content,
+                media_type=response.headers.get("content-type", "image/jpeg"),
+                headers={"Cache-Control": "public, max-age=86400"}
+            )
+    except Exception as e:
+        print(f"Plex art fetch error for {rating_key}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach Plex for this track's art")
+
+
 # ============================================================================
 # LAST.FM INTEGRATION
 # ============================================================================
@@ -318,6 +358,118 @@ async def get_lastfm_top_artists(period: str = "7day", limit: int = 20):
             }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Last.fm error: {str(e)}")
+
+
+def _lastfm_sign(params: dict) -> str:
+    """
+    Last.fm's request-signing scheme: sort params by key, concatenate
+    key+value pairs with no separator, append the shared secret, MD5 the
+    result. Required for every authenticated (write) call - scrobble,
+    updateNowPlaying, and the auth handshake itself.
+    """
+    sig_string = "".join(f"{k}{v}" for k, v in sorted(params.items())) + LASTFM_API_SECRET
+    return hashlib.md5(sig_string.encode("utf-8")).hexdigest()
+
+
+async def _lastfm_signed_call(method: str, params: dict, http_method: str = "POST") -> dict:
+    if not LASTFM_API_KEY or not LASTFM_API_SECRET:
+        raise HTTPException(status_code=400, detail="LASTFM_API_KEY/LASTFM_API_SECRET not configured")
+
+    call_params = {**params, "method": method, "api_key": LASTFM_API_KEY}
+    call_params["api_sig"] = _lastfm_sign(call_params)
+    call_params["format"] = "json"
+
+    async with httpx.AsyncClient() as client:
+        if http_method == "POST":
+            response = await client.post("https://ws.audioscrobbler.com/2.0/", data=call_params, timeout=10.0)
+        else:
+            response = await client.get("https://ws.audioscrobbler.com/2.0/", params=call_params, timeout=10.0)
+
+    data = response.json()
+    if "error" in data:
+        # Never log call_params here - api_sig alone is a signed
+        # credential-equivalent, and a scrobble call's params include
+        # the session key.
+        raise HTTPException(status_code=502, detail=f"Last.fm error {data['error']}: {data.get('message', '')}")
+    return data
+
+
+@app.get("/lastfm/auth/start")
+async def lastfm_auth_start():
+    """
+    Step 1 of the one-time scrobbling setup. Returns a Last.fm URL to
+    open and approve, plus the token /lastfm/auth/complete needs next.
+    Only needed once - the resulting session key doesn't expire. See the
+    README for the full walkthrough.
+    """
+    if not LASTFM_API_KEY or not LASTFM_API_SECRET:
+        raise HTTPException(status_code=400, detail="LASTFM_API_KEY/LASTFM_API_SECRET not configured")
+
+    data = await _lastfm_signed_call("auth.getToken", {}, http_method="GET")
+    token = data.get("token")
+    if not token:
+        raise HTTPException(status_code=502, detail="Last.fm did not return a token")
+
+    return {
+        "token": token,
+        "auth_url": f"https://www.last.fm/api/auth/?api_key={LASTFM_API_KEY}&token={token}",
+        "next_step": "Open auth_url, click Allow, then call GET /lastfm/auth/complete?token=<this token>"
+    }
+
+
+@app.get("/lastfm/auth/complete")
+async def lastfm_auth_complete(token: str):
+    """
+    Step 2: exchanges an approved token for a permanent session key. This
+    key has to be saved as LASTFM_SESSION_KEY (e.g. in Portainer) for
+    scrobbling to work - there's nowhere to persist it in this deploy, so
+    it isn't stored automatically. Comes back once in this response and
+    is never logged.
+    """
+    data = await _lastfm_signed_call("auth.getSession", {"token": token}, http_method="GET")
+    session_key = data.get("session", {}).get("key")
+    if not session_key:
+        raise HTTPException(status_code=502, detail="Last.fm did not return a session key")
+
+    return {
+        "session_key": session_key,
+        "next_step": "Save this as LASTFM_SESSION_KEY and redeploy - it won't be shown again from here."
+    }
+
+
+@app.post("/lastfm/now-playing")
+async def lastfm_now_playing(artist: str, track: str, album: Optional[str] = None):
+    """Updates Last.fm's live 'now playing' status. Best-effort - failures
+    here shouldn't interrupt playback, so the frontend should ignore
+    errors from this endpoint rather than surface them."""
+    if not LASTFM_SESSION_KEY:
+        raise HTTPException(status_code=400, detail="LASTFM_SESSION_KEY not configured")
+
+    params = {"artist": artist, "track": track, "sk": LASTFM_SESSION_KEY}
+    if album:
+        params["album"] = album
+    await _lastfm_signed_call("track.updateNowPlaying", params)
+    return {"status": "ok"}
+
+
+@app.post("/lastfm/scrobble")
+async def lastfm_scrobble(artist: str, track: str, timestamp: int, album: Optional[str] = None):
+    """
+    Scrobbles a track. Per Last.fm's own rules a scrobble should only be
+    submitted for a track that's actually played through - the frontend
+    calls this on natural end-of-track, not on skip. `timestamp` is the
+    unix time (seconds) the track STARTED playing, not when it finished.
+    """
+    if not LASTFM_SESSION_KEY:
+        raise HTTPException(status_code=400, detail="LASTFM_SESSION_KEY not configured")
+
+    params = {
+        "artist": artist, "track": track, "timestamp": timestamp, "sk": LASTFM_SESSION_KEY
+    }
+    if album:
+        params["album"] = album
+    await _lastfm_signed_call("track.scrobble", params)
+    return {"status": "ok"}
 
 
 # ============================================================================

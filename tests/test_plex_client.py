@@ -77,6 +77,7 @@ async def test_get_library_tracks_extracts_artist_and_album(plex):
     # Regression: stream_url used to be absent entirely, so nothing
     # returned by /stream/session was ever actually playable.
     assert track["stream_url"] == "/plex/stream/123"
+    assert track["art_url"] == "/plex/art/123"
 
 
 @respx.mock
@@ -141,6 +142,53 @@ async def test_get_track_stream_url_raises_when_no_part(plex):
 
 
 @respx.mock
+async def test_get_track_art_url_prefers_album_thumb(plex):
+    """Confirmed live: the flat library listing omits thumb entirely -
+    has to be looked up per-track, same shape as get_track_stream_url."""
+    xml = '''<?xml version="1.0"?>
+    <MediaContainer><Track ratingKey="1" title="Song"
+        thumb="/library/metadata/47855/thumb/123"
+        parentThumb="/library/metadata/47855/thumb/123"
+        grandparentThumb="/library/metadata/39472/thumb/456"/></MediaContainer>
+    '''
+    respx.get(f"{PLEX_URL}/library/metadata/1").mock(
+        return_value=httpx.Response(200, content=xml, headers={"content-type": "application/xml"})
+    )
+
+    url = await plex.get_track_art_url("1")
+
+    assert url == f"{PLEX_URL}/library/metadata/47855/thumb/123?X-Plex-Token=fake-token"
+
+
+@respx.mock
+async def test_get_track_art_url_falls_back_to_artist_thumb(plex):
+    """Confirmed live: an album with no matched metadata (empty title)
+    can still lack its own thumb even when the artist has one."""
+    xml = '''<?xml version="1.0"?>
+    <MediaContainer><Track ratingKey="1" title="Song"
+        grandparentThumb="/library/metadata/39472/thumb/456"/></MediaContainer>
+    '''
+    respx.get(f"{PLEX_URL}/library/metadata/1").mock(
+        return_value=httpx.Response(200, content=xml, headers={"content-type": "application/xml"})
+    )
+
+    url = await plex.get_track_art_url("1")
+
+    assert url == f"{PLEX_URL}/library/metadata/39472/thumb/456?X-Plex-Token=fake-token"
+
+
+@respx.mock
+async def test_get_track_art_url_raises_when_no_art(plex):
+    xml = '<?xml version="1.0"?><MediaContainer><Track ratingKey="1" title="No art"/></MediaContainer>'
+    respx.get(f"{PLEX_URL}/library/metadata/1").mock(
+        return_value=httpx.Response(200, content=xml, headers={"content-type": "application/xml"})
+    )
+
+    with pytest.raises(RuntimeError, match="No cover art"):
+        await plex.get_track_art_url("1")
+
+
+@respx.mock
 async def test_search_tracks_extracts_artist_and_album(plex):
     """
     Regression test: search_tracks() had artist/album swapped
@@ -157,6 +205,7 @@ async def test_search_tracks_extracts_artist_and_album(plex):
     assert tracks[0]["artist"] == "Artist Two"
     assert tracks[0]["album"] == "Album Two"
     assert tracks[0]["stream_url"] == "/plex/stream/456"
+    assert tracks[0]["art_url"] == "/plex/art/456"
 
 
 def test_requests_xml_not_json(plex):

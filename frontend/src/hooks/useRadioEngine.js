@@ -78,6 +78,8 @@ export function useRadioEngine() {
   const segmentTimeoutRef = useRef(null)
   const introTriggeredRef = useRef(false) // has this track's intro window already been used
   const outroTriggeredRef = useRef(false)
+  const nowPlayingTrackRef = useRef(null) // mirrors nowPlayingTrack state, readable from stable event handlers
+  const trackStartedAtRef = useRef(null) // unix seconds - for the scrobble timestamp
   const adThemeQueueRef = useRef(shuffled(AD_THEMES)) // pop from this; reshuffle when empty
   const usedHeadlinesRef = useRef(new Set()) // headline titles already used this session
   const configRef = useRef(config)
@@ -170,8 +172,31 @@ export function useRadioEngine() {
         return []
       }
 
-      const res = await api.getPlexTracks(musicLibrary.key, 50)
-      const tracks = (res.tracks || []).filter((t) => t.stream_url)
+      const res = await api.getPlexTracks(musicLibrary.key, 150)
+      let tracks = (res.tracks || []).filter((t) => t.stream_url)
+
+      // Bias toward Last.fm top artists rather than a flat shuffle - a
+      // track by a top artist gets extra copies in the pool before
+      // shuffling, so it's proportionally more likely to come up without
+      // hard-excluding anything else (still plays other artists too,
+      // just less often). Best-effort: no Last.fm configured, or the
+      // call fails, just falls back to an unweighted shuffle.
+      try {
+        const { top_artists: topArtists } = await api.getTopArtists('1month', 25)
+        const topNames = new Set((topArtists || []).map((a) => (a.name || '').toLowerCase()))
+        if (topNames.size > 0) {
+          const weighted = []
+          for (const track of tracks) {
+            const copies = topNames.has((track.artist || '').toLowerCase()) ? 3 : 1
+            for (let i = 0; i < copies; i++) weighted.push(track)
+          }
+          tracks = weighted
+        }
+      } catch {
+        // Last.fm unavailable - unweighted pool is still a perfectly
+        // fine queue, just don't block loading music on this.
+      }
+
       // shuffle
       for (let i = tracks.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1))
@@ -192,6 +217,8 @@ export function useRadioEngine() {
     const track = queue[musicIndexRef.current % queue.length]
     musicIndexRef.current += 1
     setNowPlayingTrack(track)
+    nowPlayingTrackRef.current = track
+    trackStartedAtRef.current = Math.floor(Date.now() / 1000)
     setPlayHistory((prev) => [{ ...track, played_at: new Date().toISOString() }, ...prev].slice(0, 20))
     musicAudioRef.current.src = api.audioUrl(track.stream_url)
     musicAudioRef.current.volume = volume
@@ -200,6 +227,11 @@ export function useRadioEngine() {
     musicAudioRef.current.play().catch(() => {
       /* autoplay may be blocked until a user gesture - Play button click counts */
     })
+    // Best-effort - Last.fm being unreachable/unconfigured shouldn't
+    // interrupt playback, so failures here are deliberately swallowed.
+    if (track.artist && track.title) {
+      api.updateNowPlaying(track.artist, track.title, track.album).catch(() => {})
+    }
   }, [volume])
 
   const skipTrack = useCallback(() => {
@@ -452,11 +484,23 @@ export function useRadioEngine() {
     else play()
   }, [isPlaying, pause, play])
 
-  // music auto-advance
+  // music auto-advance (+ scrobble the track that just finished)
   useEffect(() => {
     const el = musicAudioRef.current
     if (!el) return
-    const handleEnded = () => playNextTrack()
+    const handleEnded = () => {
+      // Per Last.fm's own rules, a scrobble is for a track that's
+      // actually played through - only on natural end (this handler),
+      // never on skip, and only tracks at least 30s long. Best-effort:
+      // Last.fm being unreachable/unconfigured must not block advancing
+      // to the next track.
+      const finished = nowPlayingTrackRef.current
+      const startedAt = trackStartedAtRef.current
+      if (finished?.artist && finished?.title && startedAt && (finished.duration || 0) >= 30) {
+        api.scrobbleTrack(finished.artist, finished.title, startedAt, finished.album).catch(() => {})
+      }
+      playNextTrack()
+    }
     el.addEventListener('ended', handleEnded)
     return () => el.removeEventListener('ended', handleEnded)
   }, [playNextTrack])

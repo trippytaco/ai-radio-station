@@ -88,13 +88,17 @@ class PlexClient:
                         "album": track_elem.get("parentTitle", "Unknown"),
                         "duration": int(track_elem.get("duration", 0)) // 1000,  # Convert to seconds
                         "rating_key": rating_key,
-                        # Relative path, proxied through our own /plex/stream
-                        # endpoint - never exposes the Plex token to the client.
-                        "stream_url": f"/plex/stream/{rating_key}" if rating_key else None
+                        # Relative paths, proxied through our own /plex/*
+                        # endpoints - never exposes the Plex token to the
+                        # client. Art is resolved lazily (on request) by
+                        # /plex/art, same as stream_url - no extra Plex
+                        # fetch here just to list tracks.
+                        "stream_url": f"/plex/stream/{rating_key}" if rating_key else None,
+                        "art_url": f"/plex/art/{rating_key}" if rating_key else None
                     })
-                
+
                 return tracks
-        
+
         except Exception as e:
             raise RuntimeError(f"Plex tracks fetch error: {str(e)}")
     
@@ -122,7 +126,34 @@ class PlexClient:
                 raise RuntimeError(f"No playable file found for track {rating_key}")
 
             return f"{self.url}{part.get('key')}?X-Plex-Token={self.token}"
-    
+
+    async def get_track_art_url(self, rating_key: str) -> str:
+        """
+        Get the cover art URL for a track - the album's thumb, falling
+        back to the artist's if the album has none. Confirmed live: the
+        flat /library/sections/{key}/all listing omits thumb/parentThumb
+        entirely, so this has to be looked up per-track from its own
+        metadata (same shape as get_track_stream_url above).
+        """
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{self.url}/library/metadata/{rating_key}",
+                headers=self._get_headers(),
+                timeout=10.0
+            )
+            response.raise_for_status()
+
+            root = ET.fromstring(response.content)
+            track = root.find("Track")
+            if track is None:
+                raise RuntimeError(f"Track {rating_key} not found")
+
+            thumb = track.get("thumb") or track.get("parentThumb") or track.get("grandparentThumb")
+            if not thumb:
+                raise RuntimeError(f"No cover art available for track {rating_key}")
+
+            return f"{self.url}{thumb}?X-Plex-Token={self.token}"
+
     async def get_random_track(self, library_key: str) -> Optional[Dict[str, Any]]:
         """Get a random track from library"""
         try:
@@ -164,7 +195,8 @@ class PlexClient:
                         "album": track_elem.get("parentTitle", "Unknown"),
                         "duration": int(track_elem.get("duration", 0)) // 1000,
                         "rating_key": rating_key,
-                        "stream_url": f"/plex/stream/{rating_key}" if rating_key else None
+                        "stream_url": f"/plex/stream/{rating_key}" if rating_key else None,
+                        "art_url": f"/plex/art/{rating_key}" if rating_key else None
                     })
                 
                 return tracks

@@ -131,9 +131,29 @@ DEBUG=false
 3. You'll get your token
 
 ### Last.fm
+
+Reading recent tracks and top artists only needs `LASTFM_API_KEY` +
+`LASTFM_USERNAME`:
 1. Create app: https://www.last.fm/api/account/create
-2. Copy API Key
+2. Copy API Key (and note the **shared secret** shown alongside it -
+   you'll need it for scrobbling, next)
 3. Get your username from your Last.fm profile
+
+**Scrobbling** (tracks played through the station reporting back to your
+Last.fm history) needs two more, and a one-time authorization handshake
+since it's a write operation - no in-app UI for this, it's the backend's
+own endpoints:
+
+1. Set `LASTFM_API_SECRET` (from the app you created above) and redeploy
+2. `curl -X GET "https://radiome.orosz.cc/api/lastfm/auth/start"` - returns
+   an `auth_url`
+3. Open `auth_url` in a browser, click **Allow**
+4. `curl -X GET "https://radiome.orosz.cc/api/lastfm/auth/complete?token=<the token from step 2>"` -
+   returns a `session_key`
+5. Set `LASTFM_SESSION_KEY` to that value and redeploy
+
+The session key doesn't expire, so this is a one-time setup - not needed
+again unless you revoke the app's access on Last.fm's end.
 
 ### Anthropic (Claude)
 1. Go to https://console.anthropic.com
@@ -385,6 +405,13 @@ already cloned, clones fresh otherwise).
       current-affairs issue (2026-09-01, not scheduled yet)
 - [ ] New segment type: a Triple J Hack-style deep-dive "story of the day"
       (2026-09-01, not scheduled yet)
+- [ ] New segment type: host commentary/review of "last night's episode of
+      ..." pulled from Plex's TV/movie watch history, plus banter about
+      what's on deck for tonight (2026-09-01, not scheduled yet). Raw Plex
+      doesn't have a great API for this; the QNAP already runs Tautulli
+      (tautulli.orosz.cc), which has a much richer watch-history API
+      (`get_history`, `get_recently_added`, `get_activity`) purpose-built
+      for exactly this kind of query - worth using instead of Plex directly.
 
 ---
 
