@@ -1,7 +1,7 @@
 const SLIDERS = [
-  { key: 'music_weight', label: 'Music', colorClass: 'accent-music', barClass: 'bg-music' },
-  { key: 'news_weight', label: 'News', colorClass: 'accent-news', barClass: 'bg-news' },
-  { key: 'ad_weight', label: 'Ads', colorClass: 'accent-ads', barClass: 'bg-ads' }
+  { key: 'music_weight', label: 'Music', varName: '--m3-music', textClass: 'text-music', barClass: 'bg-music' },
+  { key: 'news_weight', label: 'News', varName: '--m3-news', textClass: 'text-news', barClass: 'bg-news' },
+  { key: 'ad_weight', label: 'Ads', varName: '--m3-ads', textClass: 'text-ads', barClass: 'bg-ads' }
 ]
 
 export default function MixSliders({ config, onChange }) {
@@ -23,29 +23,37 @@ export default function MixSliders({ config, onChange }) {
 
   return (
     <section>
-      <h3 className="font-display text-xs font-bold tracking-widest text-muted mb-3">LIVE MIX</h3>
-      <p className="text-xs text-muted mb-4">Changes apply to the next segment, current one keeps playing.</p>
-      <div className="space-y-5">
-        {SLIDERS.map((s) => (
-          <div key={s.key}>
-            <div className="flex justify-between mb-1.5 font-display text-sm">
-              <span className="font-semibold">{s.label}</span>
-              <span className="text-muted">{Math.round((config[s.key] || 0) * 100)}%</span>
+      <h3 className="font-display text-xs font-bold tracking-widest text-on-surface-variant mb-1">LIVE MIX</h3>
+      <p className="text-xs text-on-surface-variant mb-4">Changes apply next segment — nothing playing gets cut off.</p>
+      <div className="space-y-4">
+        {SLIDERS.map((s) => {
+          const pct = Math.round((config[s.key] || 0) * 100)
+          return (
+            <div key={s.key}>
+              <div className="flex justify-between mb-2 font-display text-sm">
+                <span className="font-semibold text-on-surface">{s.label}</span>
+                <span className={`font-bold ${s.textClass}`}>{pct}%</span>
+              </div>
+              <div className="relative h-6 flex items-center">
+                <div className="absolute left-0 right-0 h-2 rounded-full bg-surface-container-high" />
+                <div className={`absolute left-0 h-2 rounded-full ${s.barClass}`} style={{ width: `${pct}%` }} />
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  defaultValue={config[s.key] || 0}
+                  key={`${s.key}-${config[s.key]}`}
+                  onPointerUp={(e) => handleRelease(s.key, e.target.value)}
+                  onKeyUp={(e) => handleRelease(s.key, e.target.value)}
+                  className="relative w-full"
+                  style={{ '--m3-slider-color': `var(${s.varName})` }}
+                  aria-label={s.label}
+                />
+              </div>
             </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              defaultValue={config[s.key] || 0}
-              key={`${s.key}-${config[s.key]}`}
-              onPointerUp={(e) => handleRelease(s.key, e.target.value)}
-              onKeyUp={(e) => handleRelease(s.key, e.target.value)}
-              className="w-full"
-              aria-label={s.label}
-            />
-          </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )

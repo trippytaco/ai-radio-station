@@ -1,18 +1,8 @@
 import { CONTEXTS } from '../constants/contexts'
 
-// Placeholder grayscale "photography" per context slot, done as CSS
-// gradients so the app has zero external image dependencies. Swap these
-// backgroundImage values for real photography when available.
-const BANNER_STYLES = {
-  workout: 'radial-gradient(circle at 30% 20%, #4a4a4a, #0a0a0a 70%)',
-  commute: 'linear-gradient(135deg, #2b2b2b 0%, #050505 60%)',
-  chill: 'radial-gradient(circle at 70% 80%, #3a3a3a, #0a0a0a 70%)',
-  custom: 'linear-gradient(160deg, #1f1f1f 0%, #050505 50%, #2a2a2a 100%)'
-}
-
 function PlayIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor">
       <path d="M8 5v14l11-7z" />
     </svg>
   )
@@ -20,18 +10,29 @@ function PlayIcon() {
 
 function PauseIcon() {
   return (
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
-      <rect x="6" y="5" width="4" height="14" />
-      <rect x="14" y="5" width="4" height="14" />
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="5" width="4" height="14" rx="1.5" />
+      <rect x="14" y="5" width="4" height="14" rx="1.5" />
     </svg>
   )
 }
 
 function SkipIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
       <path d="M6 5v14l10-7z" />
       <rect x="17" y="5" width="3" height="14" />
+    </svg>
+  )
+}
+
+function TuneIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+      <line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line>
+      <line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line>
+      <line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line>
+      <line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line>
     </svg>
   )
 }
@@ -56,7 +57,8 @@ export default function Hero({
   currentSegment,
   nowPlayingTrack,
   onOpenSheet,
-  onSkip
+  onSkip,
+  onSelectContext
 }) {
   const preset = CONTEXTS[config.context] || CONTEXTS.commute
   const activeHosts = (config.active_hosts || [config.host_personality])
@@ -77,65 +79,109 @@ export default function Hero({
       : preset.tagline
 
   return (
-    <div
-      className="relative w-full overflow-hidden border-b-2 border-line"
-      style={{ backgroundImage: BANNER_STYLES[preset.id] || BANNER_STYLES.commute, minHeight: '70vh' }}
-    >
+    <div className="px-4 pt-3 pb-2 sm:px-6">
+      {/* Hero art surface - dynamic-color gradient standing in for
+          album/segment artwork until real photography is wired up. */}
       <div
-        className="absolute inset-0"
-        style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.35) 55%, rgba(0,0,0,0.15) 100%)' }}
-      />
-
-      <div className="relative flex flex-col justify-between h-full min-h-[70vh] px-4 py-6 sm:px-8 text-white">
-        <div>
-          <p className="font-display text-xs tracking-[0.3em] text-white/70">{preset.showName.toUpperCase()}</p>
-          <p className="font-display text-sm text-white/60 mt-1">{preset.tagline}</p>
-          <p className="font-display text-xs tracking-widest text-white/50 mt-3">
-            ON AIR: {activeHosts || 'ALEX'}
-          </p>
+        className="relative w-full rounded-xl overflow-hidden"
+        style={{
+          minHeight: '58vh',
+          background: 'radial-gradient(120% 100% at 15% 0%, var(--m3-tertiary-container) 0%, var(--m3-primary) 46%, var(--m3-primary-container) 100%)',
+          boxShadow: '0 1px 3px var(--m3-shadow), 0 8px 24px var(--m3-shadow)'
+        }}
+      >
+        <div className="absolute top-4 left-4 flex items-center gap-1.5 pl-2.5 pr-3.5 py-1.5 rounded-full bg-surface-overlay backdrop-blur">
+          <span className={`w-2 h-2 rounded-full bg-tertiary ${isPlaying ? 'on-air-dot' : ''}`} />
+          <span className="font-display text-xs font-bold tracking-widest text-on-surface">{isPlaying ? 'ON AIR' : 'OFF AIR'}</span>
+        </div>
+        <div className="absolute top-4 right-4 px-3.5 py-1.5 rounded-full bg-surface-overlay backdrop-blur">
+          <span className="font-display text-xs font-semibold text-on-surface">{activeHosts || 'Alex'}</span>
         </div>
 
-        <div className="flex flex-col items-center gap-6 py-6">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={togglePlayback}
-              className="w-20 h-20 rounded-full bg-accent border-2 border-white flex items-center justify-center text-white active:scale-95 transition-transform shadow-lg"
-              aria-label={isPlaying ? 'Pause' : 'Play'}
-            >
-              {isPlaying ? <PauseIcon /> : <PlayIcon />}
-            </button>
-            {isPlaying && (
-              <button
-                onClick={onSkip}
-                className="w-11 h-11 rounded-full bg-white/10 border-2 border-white/60 flex items-center justify-center text-white active:scale-95 transition-transform"
-                aria-label="Skip to next song"
-                title="Skip song"
-              >
-                <SkipIcon />
-              </button>
-            )}
-          </div>
-
-          <div className="w-full max-w-md text-center fade-in" key={title}>
-            <p className="font-display text-[11px] tracking-[0.3em] text-accent font-bold">{kicker}</p>
-            <p className="font-display text-lg sm:text-xl font-bold mt-1 truncate">{title}</p>
-            <p className="text-sm text-white/70 mt-1 line-clamp-2">{subtitle}</p>
-            {isGenerating && <p className="text-xs text-white/50 mt-1">generating…</p>}
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-display text-xs text-white/50 truncate">
-            Up next: {upNextHint(config)}
+        <div className="absolute left-5 right-5 bottom-5 text-on-primary fade-in" key={title}>
+          <p className="font-display text-[11px] font-extrabold tracking-[2px] opacity-85 mb-1.5">
+            {kicker} · {preset.showName.toUpperCase()}
           </p>
-          <button
-            onClick={onOpenSheet}
-            className="shrink-0 px-4 py-3 min-h-[44px] bg-white text-black font-display text-xs font-bold tracking-widest border-2 border-white active:bg-white/90"
-          >
-            MIX, HOSTS &amp; REQUESTS
-          </button>
+          <p className="font-display text-2xl font-extrabold leading-tight mb-2 truncate">{title}</p>
+          <p className="text-sm leading-relaxed opacity-90 line-clamp-2 max-w-sm">{subtitle}</p>
+          {isGenerating && <p className="text-xs opacity-70 mt-1">generating…</p>}
         </div>
       </div>
+
+      {/* Wavy progress */}
+      <div className="mt-4 px-1">
+        <svg width="100%" height="14" viewBox="0 0 342 14" preserveAspectRatio="none" className="block">
+          <path
+            d="M0 7 Q4 2 8 7 T16 7 T24 7 T32 7 T40 7 T48 7 T56 7 T64 7 T72 7 T80 7 T88 7 T96 7 T104 7 T112 7 T120 7 T128 7 T136 7 T144 7 T152 7 T160 7 T168 7 T176 7 T184 7 T192 7 T200 7 T208 7 T216 7 T224 7 T232 7 T240 7 T248 7 T256 7 T264 7 T272 7 T280 7 T288 7 T296 7 T304 7 T312 7 T320 7 T328 7 T336 7 T342 7"
+            fill="none" stroke="var(--m3-outline-variant)" strokeWidth="4" strokeLinecap="round"
+          />
+          {isPlaying && (
+            <path
+              d="M0 7 Q4 2 8 7 T16 7 T24 7 T32 7 T40 7 T48 7 T56 7 T64 7 T72 7 T80 7 T88 7 T96 7 T104 7 T112 7 T120 7 T128 7 T136 7"
+              fill="none" stroke="var(--m3-primary)" strokeWidth="4" strokeLinecap="round"
+              strokeDasharray="8" className="wave-progress"
+            />
+          )}
+        </svg>
+      </div>
+
+      {/* Transport */}
+      <div className="flex items-center justify-center gap-4 py-4">
+        <button
+          onClick={togglePlayback}
+          className="w-[76px] h-[76px] rounded-xl bg-primary text-on-primary flex items-center justify-center active:scale-95 transition-transform"
+          style={{ boxShadow: '0 4px 10px var(--m3-shadow), 0 1px 4px var(--m3-shadow)' }}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
+        >
+          {isPlaying ? <PauseIcon /> : <PlayIcon />}
+        </button>
+        {isPlaying && (
+          <button
+            onClick={onSkip}
+            className="w-[52px] h-[52px] rounded-full bg-surface-container-high text-on-surface flex items-center justify-center active:scale-95 transition-transform"
+            aria-label="Skip to next song"
+            title="Skip song"
+          >
+            <SkipIcon />
+          </button>
+        )}
+      </div>
+
+      {/* Station presets */}
+      <div className="mt-1">
+        <p className="font-display text-xs font-bold tracking-widest text-on-surface-variant mb-2.5 px-1">WHAT ARE YOU DOING?</p>
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {Object.values(CONTEXTS).map((p) => {
+            const active = config.context === p.id
+            return (
+              <button
+                key={p.id}
+                onClick={() => onSelectContext(p.id)}
+                className={`shrink-0 flex items-center gap-1.5 px-4 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+                  active
+                    ? 'bg-primary-container text-on-primary-container'
+                    : 'bg-surface-container-low text-on-surface-variant border border-outline-variant'
+                }`}
+              >
+                <span>{p.icon}</span><span>{p.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Mix / hosts / requests entry */}
+      <button
+        onClick={onOpenSheet}
+        className="w-full mt-5 flex items-center justify-center gap-2.5 px-5 py-4 min-h-[44px] rounded-xl bg-secondary-container text-on-secondary-container font-display text-sm font-bold active:opacity-90"
+      >
+        <TuneIcon />
+        Mix, hosts &amp; requests
+      </button>
+
+      <p className="font-display text-xs text-on-surface-variant text-center mt-3">
+        Up next: {upNextHint(config)}
+      </p>
     </div>
   )
 }

@@ -2,14 +2,17 @@ export default function ErrorBanner({ message, onDismiss }) {
   if (!message) return null
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-accent text-white px-4 py-3 flex items-center justify-between gap-3 border-t-2 border-line fade-in">
+    <div
+      className="fixed left-4 right-4 bottom-4 sm:left-auto sm:right-6 sm:bottom-6 sm:max-w-sm z-40 rounded-lg bg-error-container text-on-error-container px-4 py-3.5 flex items-center justify-between gap-3 fade-in"
+      style={{ boxShadow: '0 2px 8px var(--m3-shadow), 0 6px 16px var(--m3-shadow)' }}
+    >
       <p className="text-sm font-display">{message}</p>
       <button
         onClick={onDismiss}
         aria-label="Dismiss"
-        className="shrink-0 w-9 h-9 flex items-center justify-center border-2 border-white/60 hover:bg-white/10"
+        className="shrink-0 w-8 h-8 rounded-full flex items-center justify-center"
       >
-        ✕
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
   )

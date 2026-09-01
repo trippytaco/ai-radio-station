@@ -12,7 +12,7 @@ export default function App() {
   const engine = useRadioEngine()
 
   return (
-    <div className="min-h-screen bg-bg text-fg font-body flex flex-col">
+    <div className="min-h-screen bg-surface text-on-surface font-body flex flex-col">
       <Header isPlaying={engine.isPlaying} theme={engine.theme} setTheme={engine.setTheme} />
 
       <main className="flex-1 w-full max-w-[900px] mx-auto">
@@ -25,6 +25,7 @@ export default function App() {
           nowPlayingTrack={engine.nowPlayingTrack}
           onOpenSheet={() => setSheetOpen(true)}
           onSkip={engine.skipTrack}
+          onSelectContext={engine.applyContext}
         />
 
         <div className="p-4 sm:p-6 grid gap-4 sm:grid-cols-2">

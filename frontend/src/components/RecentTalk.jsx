@@ -11,19 +11,19 @@ export default function RecentTalk({ segments }) {
   if (!segments.length) return null
 
   return (
-    <section className="border-2 border-line p-4 sm:p-5">
-      <h3 className="font-display text-xs font-bold tracking-widest text-muted mb-4">RECENT TALK</h3>
+    <section className="rounded-xl bg-surface-container-low p-4 sm:p-5">
+      <h3 className="font-display text-xs font-bold tracking-widest text-on-surface-variant mb-4">RECENT TALK</h3>
       <ul className="space-y-4 max-h-80 overflow-y-auto">
         {segments.map((seg, i) => (
-          <li key={`${seg.timestamp}-${i}`} className="border-b border-line/30 pb-3 last:border-0 last:pb-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="px-1.5 py-0.5 text-[10px] font-display font-bold tracking-widest bg-surface border border-line">
+          <li key={`${seg.timestamp}-${i}`} className="border-b border-outline-variant pb-3 last:border-0 last:pb-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-display font-bold tracking-widest bg-tertiary-container text-on-tertiary-container">
                 {(seg.context || 'talk').replace('_', ' ').toUpperCase()}
               </span>
-              <span className="text-xs font-display font-semibold">{seg.host}</span>
-              <span className="text-xs text-muted ml-auto">{timeAgo(seg.timestamp)}</span>
+              <span className="text-xs font-display font-semibold text-on-surface">{seg.host}</span>
+              <span className="text-xs text-on-surface-variant ml-auto">{timeAgo(seg.timestamp)}</span>
             </div>
-            <p className="text-sm text-fg/90">{seg.text}</p>
+            <p className="text-sm text-on-surface">{seg.text}</p>
           </li>
         ))}
       </ul>
