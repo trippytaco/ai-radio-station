@@ -16,7 +16,7 @@ services:
     container_name: ai-radio-frontend
 
     ports:
-      - "8080:80"
+      - "8090:80"
 
     restart: unless-stopped
 

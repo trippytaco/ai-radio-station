@@ -26,11 +26,14 @@ DOCKER_BIN="${DOCKER_BIN:-docker}"
 
 echo "==> Syncing checkout at $REPO_DIR"
 mkdir -p "$REPO_DIR"
+# Run as the current UID/GID, not the image's default root - otherwise
+# every file it writes into the bind mount is root-owned and this script
+# (running as a normal user) can't clean up or re-pull next time.
 if [ -d "$REPO_DIR/.git" ]; then
-    "$DOCKER_BIN" run --rm -v "$REPO_DIR:/repo" -w /repo alpine/git:latest \
+    "$DOCKER_BIN" run --rm --user "$(id -u):$(id -g)" -v "$REPO_DIR:/repo" -w /repo alpine/git:latest \
         pull --ff-only
 else
-    "$DOCKER_BIN" run --rm -v "$REPO_DIR:/repo" alpine/git:latest \
+    "$DOCKER_BIN" run --rm --user "$(id -u):$(id -g)" -v "$REPO_DIR:/repo" alpine/git:latest \
         clone --depth 1 "$REPO_URL" /repo
 fi
 
@@ -41,4 +44,4 @@ cd "$REPO_DIR"
 echo "==> Recreating ai-radio-frontend"
 "$DOCKER_BIN" compose -f docker-compose.frontend.yml up -d --force-recreate
 
-echo "==> Done. Serving on port 8080."
+echo "==> Done. Serving on port 8090."
