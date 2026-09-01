@@ -4,7 +4,7 @@ const REQUESTS = [
   { context: 'transition', label: '🎵 Transition' }
 ]
 
-export default function RequestButtons({ onRequest, disabled }) {
+export default function RequestButtons({ onRequest, disabled, queued }) {
   return (
     <section>
       <h3 className="font-display text-xs font-bold tracking-widest text-muted mb-3">REQUEST A SEGMENT</h3>
@@ -21,6 +21,9 @@ export default function RequestButtons({ onRequest, disabled }) {
         ))}
       </div>
       {disabled && <p className="text-xs text-muted mt-2">Press play first.</p>}
+      {!disabled && queued && (
+        <p className="text-xs text-muted mt-2">Queued - playing after the current segment.</p>
+      )}
     </section>
   )
 }

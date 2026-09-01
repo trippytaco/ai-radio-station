@@ -41,7 +41,7 @@ export default function App() {
         toggleHost={engine.toggleHost}
         requestSegment={engine.requestSegment}
         isPlaying={engine.isPlaying}
-        isGenerating={engine.isGenerating}
+        isSegmentQueued={engine.isSegmentQueued}
       />
 
       <ErrorBanner message={engine.error} onDismiss={engine.dismissError} />

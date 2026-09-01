@@ -51,6 +51,15 @@ export function useRadioEngine() {
   const segmentTimeoutRef = useRef(null)
   const configRef = useRef(config)
   configRef.current = config
+  // True from the moment a segment starts generating until its audio (or
+  // the display fallback) actually finishes - not the same as
+  // isGenerating, which only covers the API call. A tick or a manual
+  // request arriving while this is true must never cut off what's
+  // currently playing (mix/host/context changes already only affect
+  // future segments and don't need this - see updateConfig).
+  const segmentActiveRef = useRef(false)
+  const pendingRequestRef = useRef(null) // {context, topic} | null - at most one queued
+  const [isSegmentQueued, setIsSegmentQueued] = useState(false)
 
   useEffect(() => {
     if (musicAudioRef.current) musicAudioRef.current.volume = volume
@@ -174,6 +183,18 @@ export function useRadioEngine() {
 
   const runSegment = useCallback(
     async (context, topic) => {
+      // Never start a new segment over one that's still active (generating
+      // or its audio still playing) - queue it instead. This is what
+      // actually keeps the illusion of a live station intact: a request
+      // or an auto-tick can decide *what* plays next, but never *when*
+      // the current thing gets cut off.
+      if (segmentActiveRef.current) {
+        pendingRequestRef.current = { context, topic }
+        setIsSegmentQueued(true)
+        return
+      }
+
+      segmentActiveRef.current = true
       setIsGenerating(true)
       try {
         const result = await api.generateSegment(context, topic)
@@ -186,6 +207,16 @@ export function useRadioEngine() {
         const revert = () => {
           duckMusic(false)
           setCurrentSegment(null)
+          segmentActiveRef.current = false
+
+          // A request or tick came in while this segment was playing -
+          // run it now that it's actually safe to.
+          const pending = pendingRequestRef.current
+          if (pending) {
+            pendingRequestRef.current = null
+            setIsSegmentQueued(false)
+            runSegment(pending.context, pending.topic)
+          }
         }
         // Always revert after SEGMENT_MAX_DISPLAY_MS at the latest, even
         // if audio plays longer or shorter, or there's no audio at all.
@@ -198,6 +229,7 @@ export function useRadioEngine() {
         }
       } catch (err) {
         reportError(err, "Couldn't generate that segment")
+        segmentActiveRef.current = false
       } finally {
         setIsGenerating(false)
       }
@@ -207,17 +239,23 @@ export function useRadioEngine() {
 
   const requestSegment = useCallback(
     (context) => {
-      if (!isPlaying || isGenerating) return
+      if (!isPlaying) return
       runSegment(context)
     },
-    [isPlaying, isGenerating, runSegment]
+    [isPlaying, runSegment]
   )
 
   // --- the "live station" tick loop ------------------------------------------
   const tick = useCallback(async () => {
+    // Unlike requestSegment, an auto-tick shouldn't queue itself up behind
+    // a segment that's already active - it'll just get another chance on
+    // the next tick. Queueing every tick would make requests pile up
+    // behind auto-generated ones the listener never asked for.
+    if (segmentActiveRef.current) return
+
     const cfg = configRef.current
     const pick = weightedPick({ ad: cfg.ad_weight, news: cfg.news_weight })
-    if (!pick || isGenerating) return
+    if (!pick) return
 
     if (pick === 'ad') {
       runSegment('ad_lib')
@@ -233,7 +271,7 @@ export function useRadioEngine() {
     } catch {
       runSegment('transition') // news unavailable this tick, fall back
     }
-  }, [isGenerating, runSegment])
+  }, [runSegment])
 
   const play = useCallback(async () => {
     setError(null)
@@ -275,6 +313,9 @@ export function useRadioEngine() {
     segmentAudioRef.current?.pause()
     clearInterval(tickTimerRef.current)
     clearTimeout(segmentTimeoutRef.current)
+    segmentActiveRef.current = false
+    pendingRequestRef.current = null
+    setIsSegmentQueued(false)
   }, [])
 
   const togglePlayback = useCallback(() => {
@@ -352,6 +393,7 @@ export function useRadioEngine() {
     toggleHost,
     isPlaying,
     isGenerating,
+    isSegmentQueued,
     togglePlayback,
     currentSegment,
     nowPlayingTrack,

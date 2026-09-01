@@ -5,7 +5,7 @@ import HostToggles from './HostToggles.jsx'
 import RequestButtons from './RequestButtons.jsx'
 import TopicsAndNews from './TopicsAndNews.jsx'
 
-export default function ControlSheet({ open, onClose, config, updateConfig, applyContext, toggleHost, requestSegment, isPlaying, isGenerating }) {
+export default function ControlSheet({ open, onClose, config, updateConfig, applyContext, toggleHost, requestSegment, isPlaying, isSegmentQueued }) {
   useEffect(() => {
     if (!open) return
     const onKey = (e) => e.key === 'Escape' && onClose()
@@ -44,7 +44,7 @@ export default function ControlSheet({ open, onClose, config, updateConfig, appl
           <MixSliders config={config} onChange={updateConfig} />
           <StationPresets activeContext={config.context} onSelect={applyContext} />
           <HostToggles activeHosts={config.active_hosts} onToggle={toggleHost} />
-          <RequestButtons onRequest={requestSegment} disabled={!isPlaying || isGenerating} />
+          <RequestButtons onRequest={requestSegment} disabled={!isPlaying} queued={isSegmentQueued} />
           <TopicsAndNews config={config} onChange={updateConfig} />
         </div>
       </div>
