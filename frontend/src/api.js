@@ -1,6 +1,8 @@
-// Backend base URL. Set VITE_API_BASE at build time to point at a
-// different backend; defaults to the live production API.
-export const API_BASE = import.meta.env.VITE_API_BASE || 'https://radiome.orosz.cc'
+// Backend base URL, relative or absolute. Set VITE_API_BASE at build time;
+// defaults to /api (path-based routing on the same domain the frontend is
+// served from - see nginx/reverse-proxy config, which strips /api before
+// forwarding to the backend).
+export const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -11,7 +13,11 @@ class ApiError extends Error {
 }
 
 async function request(path, { method = 'GET', params, body, timeoutMs = 30000 } = {}) {
-  const url = new URL(API_BASE + path)
+  // Second arg resolves a relative API_BASE (e.g. "/api") against the
+  // current page's origin; a full absolute API_BASE (e.g. in dev, or a
+  // deploy without path-based routing) is used as-is - the base is only
+  // consulted when the first argument isn't already absolute.
+  const url = new URL(API_BASE + path, window.location.origin)
   if (params) {
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, value)

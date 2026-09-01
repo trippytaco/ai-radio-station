@@ -135,7 +135,7 @@ services:
     build:
       context: https://github.com/trippytaco/ai-radio-station.git#main:frontend
       args:
-        VITE_API_BASE: ${VITE_API_BASE:-https://radiome.orosz.cc}
+        VITE_API_BASE: ${VITE_API_BASE:-/api}
 
     container_name: ai-radio-frontend
 
