@@ -1,0 +1,27 @@
+version: '3.8'
+
+# RadioMe frontend - deploy via scripts/deploy-frontend.sh, not Portainer's
+# stack editor. This needs a real `docker build` from a local checkout
+# (see docker-compose.yml's note on why a git-context build doesn't work
+# on this QNAP), so this file only works run from inside an actual clone
+# of the repo - which is exactly what the deploy script sets up.
+
+services:
+  ai-radio-frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: ${VITE_API_BASE:-https://radiome.orosz.cc}
+
+    container_name: ai-radio-frontend
+
+    ports:
+      - "8080:80"
+
+    restart: unless-stopped
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
