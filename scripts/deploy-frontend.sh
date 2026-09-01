@@ -24,6 +24,16 @@ REPO_URL="https://github.com/trippytaco/ai-radio-station.git"
 REPO_DIR="${REPO_DIR:-$HOME/ai-radio-station-repo}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 
+# On this QNAP, Container Station's docker binary resolves BuildKit's
+# state dir under its own install path regardless of the shell's $HOME
+# (confirmed live: it tried /share/CACHEDEV1_DATA/.qpkg/container-station/
+# homes/<user>, which this user can't write to), causing `docker compose
+# build` to fail with a permission error. Pointing HOME/DOCKER_CONFIG at
+# somewhere actually writable works around it. Harmless no-op on a normal
+# Docker host where $HOME is already writable.
+export HOME="${HOME:-/tmp}"
+export DOCKER_CONFIG="${DOCKER_CONFIG:-$HOME/.docker-buildx}"
+
 echo "==> Syncing checkout at $REPO_DIR"
 mkdir -p "$REPO_DIR"
 # Run as the current UID/GID, not the image's default root - otherwise
