@@ -1,5 +1,3 @@
-version: '3.8'
-
 # RadioMe frontend - deploy via scripts/deploy-frontend.sh, not Portainer's
 # stack editor. This needs a real `docker build` from a local checkout
 # (see docker-compose.yml's note on why a git-context build doesn't work
