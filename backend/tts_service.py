@@ -121,11 +121,14 @@ class ElevenLabsTTS(TTSProvider):
         
         self.client = ElevenLabs(api_key=api_key)
         
-        # Voice IDs (free tier available)
+        # Voice IDs. The previous ones (Bella/Josh) had been deprecated on
+        # ElevenLabs's end - confirmed live via 404 voice_not_found - and
+        # weren't even in this account's actual voice library. Picked from
+        # GET /v1/voices against the real account instead of guessing.
         self.voices = {
-            "alex_female": "EXAVITQu4vr4xnSDxMHj",  # Bella - sassy
-            "jordan_male": "pMsXgVXv3BLzUAu6UVCH",   # Josh - smooth
-            "default": "EXAVITQu4vr4xnSDxMHj"
+            "alex_female": "cgSgspJ2msm6clMCkdW9",  # Jessica - playful, bright, warm
+            "jordan_male": "cjVigY5qzO86Huf0OWal",   # Eric - smooth, trustworthy
+            "default": "cgSgspJ2msm6clMCkdW9"
         }
     
     async def synthesize(self, text: str, voice_id: str = "alex_female") -> bytes:

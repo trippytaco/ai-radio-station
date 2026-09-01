@@ -19,7 +19,8 @@ version: '3.8'
 # - ANTHROPIC_API_KEY
 #
 # Optional (TTS - degrades to text-only if unset):
-# - TTS_PROVIDER (default: google)
+# - TTS_PROVIDER (default: elevenlabs - Google's voices sounded robotic;
+#   switched per user feedback on 2026-09-01)
 # - GOOGLE_CLOUD_CREDENTIALS_JSON (base64-encoded service account key JSON - see README)
 # - ELEVENLABS_API_KEY
 #
@@ -67,7 +68,7 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
 
       # TTS Configuration (optional - degrades to text-only if unset)
-      TTS_PROVIDER: ${TTS_PROVIDER:-google}
+      TTS_PROVIDER: ${TTS_PROVIDER:-elevenlabs}
       GOOGLE_CLOUD_CREDENTIALS_JSON: ${GOOGLE_CLOUD_CREDENTIALS_JSON:-}
       ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
 
