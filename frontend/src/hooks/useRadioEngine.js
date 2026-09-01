@@ -91,6 +91,11 @@ export function useRadioEngine() {
   const segmentActiveRef = useRef(false)
   const pendingRequestRef = useRef(null) // {context, topic} | null - at most one queued
   const [isSegmentQueued, setIsSegmentQueued] = useState(false)
+  // isPlaying (React state) is only current at render time - runSegment
+  // needs to check the *live* value after an await, when a stale closure
+  // over isPlaying could still say true even though pause() ran in the
+  // meantime. This ref is kept in sync everywhere setIsPlaying is called.
+  const isPlayingRef = useRef(false)
 
   useEffect(() => {
     if (musicAudioRef.current) musicAudioRef.current.volume = volume
@@ -237,6 +242,21 @@ export function useRadioEngine() {
       setIsGenerating(true)
       try {
         const result = await api.generateSegment(context, topic)
+
+        // The station may have been paused while this generation was in
+        // flight (a real async gap) - confirmed live: pause() correctly
+        // stopped whatever audio was already playing, but a segment still
+        // being *generated* at that moment ignored it and started playing
+        // once the API call resolved anyway. isPlaying (state) can't be
+        // trusted here - this closure captured whatever it was when
+        // runSegment was called, not the current value - hence the ref.
+        if (!isPlayingRef.current) {
+          segmentActiveRef.current = false
+          pendingRequestRef.current = null
+          setIsSegmentQueued(false)
+          return
+        }
+
         setCurrentSegment(result)
         setRecentTalk((prev) => [result, ...prev].slice(0, 20))
 
@@ -302,8 +322,14 @@ export function useRadioEngine() {
     if (segmentActiveRef.current) return
 
     const cfg = configRef.current
-    const pick = weightedPick({ ad: cfg.ad_weight, news: cfg.news_weight })
-    if (!pick) return
+    // music_weight has to be in this roll too, not just ad vs news against
+    // each other - otherwise every single intro/outro window guarantees
+    // a talk segment regardless of the Music slider, which is exactly
+    // what made it feel like it was constantly talking over the music
+    // (confirmed live: every track's start and end triggered talk, with
+    // no "just let it play" outcome ever possible).
+    const pick = weightedPick({ music: cfg.music_weight, ad: cfg.ad_weight, news: cfg.news_weight })
+    if (!pick || pick === 'music') return
 
     if (pick === 'ad') {
       runSegment('ad_lib', nextAdTheme())
@@ -386,6 +412,7 @@ export function useRadioEngine() {
         return
       }
     }
+    isPlayingRef.current = true
     setIsPlaying(true)
     playNextTrack()
     // playNextTrack() just reset introTriggeredRef to false for this track;
@@ -397,6 +424,7 @@ export function useRadioEngine() {
   }, [loadMusicQueue, playNextTrack, runSegment, reportError])
 
   const pause = useCallback(() => {
+    isPlayingRef.current = false
     setIsPlaying(false)
     musicAudioRef.current?.pause()
     segmentAudioRef.current?.pause()
