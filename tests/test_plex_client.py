@@ -56,12 +56,17 @@ async def test_get_library_tracks_extracts_artist_and_album(plex):
     doesn't support (no parent pointers) and always returned nothing -
     artist/album were silently always "Unknown".
     """
-    respx.get(f"{PLEX_URL}/library/sections/1/all").mock(
+    route = respx.get(f"{PLEX_URL}/library/sections/1/all").mock(
         return_value=httpx.Response(200, content=TRACKS_XML, headers={"content-type": "application/xml"})
     )
 
     tracks = await plex.get_library_tracks("1")
 
+    # Regression: without type=10, Plex returns whatever the library's own
+    # view level is (confirmed live: top-level Artist directories on an
+    # "artist"-viewGroup library), not flattened tracks - this endpoint
+    # silently returned an empty list.
+    assert route.calls.last.request.url.params["type"] == "10"
     assert len(tracks) == 1
     track = tracks[0]
     assert track["title"] == "Song One"

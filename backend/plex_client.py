@@ -65,7 +65,13 @@ class PlexClient:
                 response = await client.get(
                     f"{self.url}/library/sections/{library_key}/all",
                     headers=self._get_headers(),
-                    params={"limit": limit},
+                    # type=10 (track) forces Plex to flatten to individual
+                    # tracks. Without it, /all returns whatever the
+                    # library's own view level is - confirmed live this
+                    # returns top-level Artist directories instead, so
+                    # root.findall("Track") always matched nothing and
+                    # this endpoint silently returned an empty list.
+                    params={"limit": limit, "type": 10},
                     timeout=10.0
                 )
                 response.raise_for_status()

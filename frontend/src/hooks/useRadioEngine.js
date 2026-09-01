@@ -115,7 +115,17 @@ export function useRadioEngine() {
   // --- music queue -----------------------------------------------------------
   const loadMusicQueue = useCallback(async () => {
     try {
-      const res = await api.getPlexTracks('1', 50)
+      // Don't assume library key "1" is the music library - it varies per
+      // Plex server (confirmed live: this deploy's Music library is key
+      // "3"). Ask Plex which section is actually type: "music".
+      const { libraries } = await api.getPlexLibraries()
+      const musicLibrary = (libraries || []).find((lib) => lib.type === 'music')
+      if (!musicLibrary) {
+        reportError(null, 'No music library found in Plex')
+        return []
+      }
+
+      const res = await api.getPlexTracks(musicLibrary.key, 50)
       const tracks = (res.tracks || []).filter((t) => t.stream_url)
       // shuffle
       for (let i = tracks.length - 1; i > 0; i--) {

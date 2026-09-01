@@ -64,7 +64,9 @@ export const api = {
       r.json()
     ),
 
-  getPlexTracks: (libraryKey = '1', limit = 50) =>
+  getPlexLibraries: () => request('/plex/libraries').then((r) => r.json()),
+
+  getPlexTracks: (libraryKey, limit = 50) =>
     request('/plex/tracks', { params: { library_key: libraryKey, limit } }).then((r) => r.json()),
 
   getRecentTracks: (limit = 10) =>
