@@ -69,6 +69,9 @@ async def test_get_library_tracks_extracts_artist_and_album(plex):
     assert track["album"] == "Album One"
     assert track["duration"] == 215  # ms -> s
     assert track["rating_key"] == "123"
+    # Regression: stream_url used to be absent entirely, so nothing
+    # returned by /stream/session was ever actually playable.
+    assert track["stream_url"] == "/plex/stream/123"
 
 
 @respx.mock
@@ -84,6 +87,33 @@ async def test_get_library_tracks_falls_back_to_unknown_when_missing(plex):
 
     assert tracks[0]["artist"] == "Unknown"
     assert tracks[0]["album"] == "Unknown"
+
+
+SEARCH_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<MediaContainer size="1">
+    <Track ratingKey="456" key="/library/metadata/456" title="Song Two"
+           parentTitle="Album Two" grandparentTitle="Artist Two" duration="180000"/>
+</MediaContainer>
+"""
+
+
+@respx.mock
+async def test_search_tracks_extracts_artist_and_album(plex):
+    """
+    Regression test: search_tracks() had artist/album swapped
+    (parentTitle read as artist, grandparentTitle as album) - the
+    opposite of Plex's actual convention, and the opposite of what
+    get_library_tracks does two methods above.
+    """
+    respx.get(f"{PLEX_URL}/search").mock(
+        return_value=httpx.Response(200, content=SEARCH_XML, headers={"content-type": "application/xml"})
+    )
+
+    tracks = await plex.search_tracks("song two")
+
+    assert tracks[0]["artist"] == "Artist Two"
+    assert tracks[0]["album"] == "Album Two"
+    assert tracks[0]["stream_url"] == "/plex/stream/456"
 
 
 def test_requests_xml_not_json(plex):

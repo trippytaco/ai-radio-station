@@ -49,6 +49,38 @@ async def test_get_headlines_all_sources_are_merged_and_sorted(news):
 
 
 @respx.mock
+async def test_enabled_sources_restricts_which_sources_are_queried(news):
+    """
+    Regression test: user_config["news_sources"] was stored but never
+    actually applied - "all sources" always meant literally all three
+    (bbc/guardian/cnn), regardless of what the user had toggled off.
+    """
+    guardian_route = respx.get("https://content.guardianapis.com/search").mock(
+        return_value=httpx.Response(200, json={"response": {"results": [
+            {"webTitle": "Guardian story", "fields": {}, "webUrl": "u", "webPublicationDate": "2026-08-31T00:00:00Z"},
+        ]}})
+    )
+    newsapi_route = respx.get("https://newsapi.org/v2/top-headlines").mock(
+        return_value=httpx.Response(200, json={"articles": []})
+    )
+
+    headlines = await news.get_headlines(limit=10, enabled_sources=["guardian"])
+
+    assert not newsapi_route.called  # bbc/cnn both skipped
+    assert guardian_route.called
+    assert len(headlines) == 1
+    assert headlines[0]["title"] == "Guardian story"
+
+
+async def test_enabled_sources_empty_list_returns_nothing(news):
+    """An explicit empty list means "no sources enabled", not "use the
+    default of all sources" - that fallback is only for enabled_sources
+    being None (unset)."""
+    headlines = await news.get_headlines(limit=10, enabled_sources=[])
+    assert headlines == []
+
+
+@respx.mock
 async def test_error_logging_does_not_leak_api_key(monkeypatch, capsys):
     """
     Regression test: confirmed live on 2026-09-01 - a Guardian 404 was

@@ -6,8 +6,10 @@ class StubNewsService:
     def __init__(self, headlines=None, raises=False):
         self._headlines = headlines or []
         self._raises = raises
+        self.last_enabled_sources = "not-called"
 
-    async def get_headlines(self, source, limit):
+    async def get_headlines(self, source, limit, enabled_sources=None):
+        self.last_enabled_sources = enabled_sources
         if self._raises:
             raise RuntimeError("boom")
         return self._headlines
@@ -31,3 +33,15 @@ def test_news_headlines_upstream_error(client, monkeypatch):
     resp = client.get("/news/headlines")
     assert resp.status_code == 500
     assert "News error" in resp.json()["detail"]
+
+
+def test_news_headlines_passes_configured_sources(client, monkeypatch):
+    """Regression test: user_config["news_sources"] was stored but never
+    actually threaded through to the news service."""
+    stub = StubNewsService(headlines=[])
+    monkeypatch.setattr(radio_api, "news_service", stub)
+
+    client.post("/config", json={"news_sources": ["guardian"]})
+    client.get("/news/headlines")
+
+    assert stub.last_enabled_sources == ["guardian"]

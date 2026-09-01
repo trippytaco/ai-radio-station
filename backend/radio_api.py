@@ -3,14 +3,16 @@ AI Radio Station Backend - Complete Integration
 Includes: Plex streaming, TTS, News, Host generation, Queue management
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import httpx
 import json
+from collections import OrderedDict
 from datetime import datetime
 from typing import Optional
 import os
+import uuid
 from dotenv import load_dotenv
 import io
 
@@ -68,8 +70,25 @@ user_config = {
     "news_sources": ["bbc", "guardian", "cnn"],
     "context": "commute",
     "active_hosts": ["alex"],
-    "tts_provider": TTS_PROVIDER
+    "tts_provider": TTS_PROVIDER,
+    "topics": [],
+    "safe_mode": False
 }
+
+# Generated host-segment audio, keyed by a UUID handed out in the
+# /generate/host-segment response as audio_url. In-memory only (fine for a
+# single-instance personal deploy) - bounded FIFO so a long-running
+# session doesn't grow this unbounded.
+_AUDIO_CACHE_MAX = 50
+_audio_cache: "OrderedDict[str, bytes]" = OrderedDict()
+
+
+def _cache_audio(audio_bytes: bytes) -> str:
+    segment_id = uuid.uuid4().hex
+    _audio_cache[segment_id] = audio_bytes
+    while len(_audio_cache) > _AUDIO_CACHE_MAX:
+        _audio_cache.popitem(last=False)
+    return segment_id
 
 # Global services
 plex_client = None
@@ -270,12 +289,15 @@ async def get_lastfm_top_artists(period: str = "7day", limit: int = 20):
 
 @app.get("/news/headlines")
 async def get_news_headlines(source: str = None, limit: int = 5):
-    """Get news headlines"""
+    """Get news headlines. When no specific source is requested, only
+    sources enabled in user_config["news_sources"] are queried."""
     if not news_service:
         raise HTTPException(status_code=500, detail="News service not available")
-    
+
     try:
-        headlines = await news_service.get_headlines(source, limit)
+        headlines = await news_service.get_headlines(
+            source, limit, enabled_sources=user_config.get("news_sources")
+        )
         return {"status": "success", "headlines": headlines}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"News error: {str(e)}")
@@ -296,12 +318,25 @@ async def generate_host_segment(
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
     
     host = HOST_PROFILES.get(user_config["host_personality"], HOST_PROFILES["alex"])
-    
+
+    safety_note = (
+        "\n        Keep it family-friendly: no profanity, no explicit or "
+        "controversial content."
+        if user_config.get("safe_mode") else ""
+    )
+    topics = user_config.get("topics") or []
+    topics_note = (
+        f"\n        The listener is especially interested in: {', '.join(topics)} - "
+        "lean into that when it's a natural fit, don't force it."
+        if topics else ""
+    )
+
     if context == "motivation":
         prompt = f"""You are {host['name']}, a {host['personality']} radio host. 
         Generate a 30-second motivational snippet for someone on a run. 
         Be encouraging but not syrupy. Make it personal—acknowledge this is THEIR radio station.
         Keep it punchy and energetic.
+        {safety_note}{topics_note}
         Return ONLY the spoken text, no stage directions."""
     
     elif context == "news_banter":
@@ -309,6 +344,7 @@ async def generate_host_segment(
         You're about to discuss this news topic: {topic}
         Generate a witty 20-second intro to the news segment that hooks the listener.
         Make it edgy and modern. Be sarcastic if appropriate.
+        {safety_note}{topics_note}
         Return ONLY the spoken text, no stage directions."""
     
     elif context == "ad_lib":
@@ -316,18 +352,21 @@ async def generate_host_segment(
         Generate a hilarious 30-second fake ad read for a completely fictional product.
         Make it absurd and funny. Commit fully to the bit.
         Example vibe: "Tired of your life? Try NEW ExistencePro™..."
+        {safety_note}{topics_note}
         Return ONLY the spoken text, no stage directions."""
     
     elif context == "transition":
         prompt = f"""You are {host['name']}, a {host['personality']} radio host.
         Generate a smooth 10-second transition between songs for THIS LISTENER's personal station.
         Acknowledge them directly, be clever, maybe reference the song that just played.
+        {safety_note}{topics_note}
         Return ONLY the spoken text, no stage directions."""
     
     else:
         prompt = f"""You are {host['name']}, a {host['personality']} radio host.
         Generate a 20-second segment of natural, engaging host banter.
         Imagine you're talking to ONE listener—this is their personal station.
+        {safety_note}{topics_note}
         Return ONLY the spoken text, no stage directions."""
     
     try:
@@ -362,20 +401,23 @@ async def generate_host_segment(
             text = data["content"][0].get("text", "Coming up next...")
         
         # Generate TTS audio
+        audio_url = None
         try:
             tts_provider = get_tts_provider()
             audio_bytes = await tts_provider.synthesize(text, host["tts_voice_id"])
+            if audio_bytes:
+                audio_url = f"/audio/segment/{_cache_audio(audio_bytes)}"
         except Exception as tts_error:
             print(f"TTS error: {str(tts_error)}, returning text-only response")
-            audio_bytes = None
-        
+
         return {
             "host": host["name"],
             "context": context,
             "text": text,
             "timestamp": datetime.now().isoformat(),
-            "audio_available": audio_bytes is not None,
-            "tts_provider": TTS_PROVIDER if audio_bytes else None
+            "audio_available": audio_url is not None,
+            "audio_url": audio_url,
+            "tts_provider": TTS_PROVIDER if audio_url else None
         }
     
     except HTTPException:
@@ -392,9 +434,12 @@ async def generate_host_segment(
 
 @app.get("/audio/segment/{segment_id}")
 async def get_segment_audio(segment_id: str):
-    """Get pre-generated audio for a segment"""
-    # This would be implemented with audio caching/generation
-    raise HTTPException(status_code=501, detail="Not yet implemented")
+    """Serve previously-generated host-segment audio, cached in memory by
+    /generate/host-segment (see audio_url in its response)."""
+    audio_bytes = _audio_cache.get(segment_id)
+    if audio_bytes is None:
+        raise HTTPException(status_code=404, detail="Segment audio not found (expired or never existed)")
+    return Response(content=audio_bytes, media_type="audio/mpeg")
 
 
 @app.get("/stream/session")
@@ -418,7 +463,8 @@ async def stream_radio_session(duration_minutes: int = 60):
             music_tracks=music_tracks,
             host_generator=generate_host_segment,
             news_service=news_service,
-            host_personality=user_config["host_personality"]
+            host_personality=user_config["host_personality"],
+            news_sources=user_config.get("news_sources")
         )
         
         # Stream as NDJSON

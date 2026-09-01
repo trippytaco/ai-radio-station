@@ -50,13 +50,13 @@ def test_queue_fifo_order():
 
 class FakeNewsService:
     """Always has a headline available."""
-    async def get_random_headline(self):
+    async def get_random_headline(self, enabled_sources=None):
         return {"title": "Big news", "source": "BBC News", "description": "d", "url": "u"}
 
 
 class NoNewsService:
     """Never has a headline (e.g. no news API keys configured)."""
-    async def get_random_headline(self):
+    async def get_random_headline(self, enabled_sources=None):
         return None
 
 

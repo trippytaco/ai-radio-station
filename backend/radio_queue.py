@@ -110,11 +110,12 @@ class SessionBuilder:
         self.queue = RadioQueue()
         self.session_id = datetime.now().isoformat()
     
-    async def build(self, 
+    async def build(self,
                    music_tracks: List[Dict[str, Any]],
                    host_generator,
                    news_service,
-                   host_personality: str = "alex") -> List[Segment]:
+                   host_personality: str = "alex",
+                   news_sources: Optional[List[str]] = None) -> List[Segment]:
         """Build a complete radio session"""
         
         segments = []
@@ -160,7 +161,7 @@ class SessionBuilder:
             elif segment_type == SegmentType.NEWS_SEGMENT:
                 # Add news with host intro (news_service may be None if it
                 # failed to initialize at startup, same as plex_client)
-                headline = await news_service.get_random_headline() if news_service else None
+                headline = await news_service.get_random_headline(enabled_sources=news_sources) if news_service else None
 
                 if headline:
                     # News intro by host - AI-generated banter hooking the

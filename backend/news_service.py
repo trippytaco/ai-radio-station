@@ -173,29 +173,37 @@ class NewsService:
             "cnn": CNNNews()
         }
     
-    async def get_headlines(self, source: str = None, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get headlines from specified source or all sources"""
+    async def get_headlines(
+        self, source: str = None, limit: int = 5, enabled_sources: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get headlines from a specific source, or from the sources in
+        enabled_sources (defaults to all registered sources if not given -
+        e.g. the caller's news_sources config wasn't set).
+        """
         if source and source in self.sources:
             return await self.sources[source].get_headlines(limit)
-        
-        # Get from all sources concurrently
-        results = await asyncio.gather(
-            *(src.get_headlines(limit) for src in self.sources.values())
-        )
+
+        active_names = enabled_sources if enabled_sources is not None else list(self.sources.keys())
+        active_clients = [self.sources[name] for name in active_names if name in self.sources]
+        if not active_clients:
+            return []
+
+        results = await asyncio.gather(*(src.get_headlines(limit) for src in active_clients))
         all_headlines = [h for headlines in results for h in headlines]
-        
+
         # Sort by date
         all_headlines.sort(
             key=lambda x: x.get("published_at", ""),
             reverse=True
         )
-        
+
         return all_headlines[:limit]
-    
-    async def get_random_headline(self) -> Optional[Dict[str, Any]]:
-        """Get a random headline"""
+
+    async def get_random_headline(self, enabled_sources: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        """Get a random headline from the enabled sources"""
         try:
-            headlines = await self.get_headlines(limit=10)
+            headlines = await self.get_headlines(limit=10, enabled_sources=enabled_sources)
             import random
             return random.choice(headlines) if headlines else None
         except Exception as e:

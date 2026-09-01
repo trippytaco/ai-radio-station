@@ -12,7 +12,7 @@ class StubPlexClient:
 
 
 class StubNewsService:
-    async def get_random_headline(self):
+    async def get_random_headline(self, enabled_sources=None):
         return {"title": "Big news", "source": "BBC News", "description": "d", "url": "u"}
 
 

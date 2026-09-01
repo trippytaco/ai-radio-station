@@ -74,13 +74,17 @@ class PlexClient:
                 tracks = []
                 
                 for track_elem in root.findall("Track"):
+                    rating_key = track_elem.get("ratingKey")
                     tracks.append({
                         "key": track_elem.get("key"),
                         "title": track_elem.get("title"),
                         "artist": track_elem.get("grandparentTitle", "Unknown"),
                         "album": track_elem.get("parentTitle", "Unknown"),
                         "duration": int(track_elem.get("duration", 0)) // 1000,  # Convert to seconds
-                        "rating_key": track_elem.get("ratingKey")
+                        "rating_key": rating_key,
+                        # Relative path, proxied through our own /plex/stream
+                        # endpoint - never exposes the Plex token to the client.
+                        "stream_url": f"/plex/stream/{rating_key}" if rating_key else None
                     })
                 
                 return tracks
@@ -122,13 +126,18 @@ class PlexClient:
                 tracks = []
                 
                 for track_elem in root.findall(".//Track"):
+                    rating_key = track_elem.get("ratingKey")
                     tracks.append({
                         "key": track_elem.get("key"),
                         "title": track_elem.get("title"),
-                        "artist": track_elem.get("parentTitle", "Unknown"),
-                        "album": track_elem.get("grandparentTitle", "Unknown"),
+                        # parentTitle=album, grandparentTitle=artist (Plex's
+                        # convention - see get_library_tracks above, this
+                        # method previously had them swapped)
+                        "artist": track_elem.get("grandparentTitle", "Unknown"),
+                        "album": track_elem.get("parentTitle", "Unknown"),
                         "duration": int(track_elem.get("duration", 0)) // 1000,
-                        "rating_key": track_elem.get("ratingKey")
+                        "rating_key": rating_key,
+                        "stream_url": f"/plex/stream/{rating_key}" if rating_key else None
                     })
                 
                 return tracks
